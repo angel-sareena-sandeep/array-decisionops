@@ -1,14 +1,11 @@
-export default function RootLayout({
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <head />
-      <body className="min-h-screen bg-gray-50">
-        <main>{children}</main>
-      </body>
-    </html>
+    <div className="min-h-screen bg-gray-50 p-6">
+      {children}
+    </div>
   );
 }
