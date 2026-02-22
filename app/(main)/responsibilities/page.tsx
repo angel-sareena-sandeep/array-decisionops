@@ -181,7 +181,7 @@ const filteredTasks = tasks.filter((task) => {
                   <td className="p-4">{task.owner}</td>
                   <td className="p-4">{task.due}</td>
                   <td className="p-4 text-sm">{task.status}</td>
-                  <td className="p-4">{task.linkedDecision}</td>
+                  
                   <td className="p-4">{task.evidenceCount} msgs</td>
                 </tr>
               ))}
