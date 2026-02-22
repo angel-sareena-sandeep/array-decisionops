@@ -22,7 +22,7 @@ const [ownerFilter, setOwnerFilter] = useState("All");
       id: 1,
       title: "Book venue for retreat",
       owner: "Michael Chen",
-      linkedDecision: "Q4 Offsite Planning",
+      
     
       due: "Oct 30, 2023",
       status: "Open",
@@ -35,7 +35,7 @@ const [ownerFilter, setOwnerFilter] = useState("All");
       id: 2,
       title: "Finalize Q3 Report",
       owner: "Sarah",
-       linkedDecision: "Q4 Offsite Planning",
+      
       due: "Oct 15, 2023",
       status: "Overdue",
       evidenceCount: 12,
@@ -46,7 +46,7 @@ const [ownerFilter, setOwnerFilter] = useState("All");
       id: 3,
       title: "Review Q4 Budget",
       owner: "David",
-       linkedDecision: "Q4 Offsite Planning",
+      
       due: "Nov 02, 2023",
       status: "Completed",
             evidenceCount: 12,
@@ -158,7 +158,7 @@ const filteredTasks = tasks.filter((task) => {
                 <th className="p-4">Owner</th>
                 <th className="p-4">Due Date</th>
                 <th className="p-4">Status</th>
-                <th className="p-4">Linked Decision</th>
+                
                 <th className="p-4">Evidence</th>
               </tr>
             </thead>
@@ -181,7 +181,6 @@ const filteredTasks = tasks.filter((task) => {
                   <td className="p-4">{task.owner}</td>
                   <td className="p-4">{task.due}</td>
                   <td className="p-4 text-sm">{task.status}</td>
-                  
                   <td className="p-4">{task.evidenceCount} msgs</td>
                 </tr>
               ))}
@@ -236,18 +235,10 @@ const filteredTasks = tasks.filter((task) => {
             >
               Evidence
             </button>
-
-            <button
-              onClick={() => setActiveTab("linked")}
-              className={`pb-2 ${
-                activeTab === "linked"
-                  ? "border-b-2 border-blue-600 text-blue-600"
-                  : "text-gray-600"
-              }`}
-            >
-              Linked Decision
-            </button>
-          </div>
+            </div>
+            
+          
+          
 
           {/* Tab Content */}
           {activeTab === "details" && (
@@ -298,14 +289,7 @@ const filteredTasks = tasks.filter((task) => {
             </div>
           )}
 
-          {activeTab === "linked" && (
-            <div className="text-sm text-gray-700">
-              <p>Linked to decision:</p>
-              <p className="font-medium mt-2 text-gray-900">
-                Q4 Offsite Planning
-              </p>
-            </div>
-          )}
+        
         </div>
       )}
     </div>
