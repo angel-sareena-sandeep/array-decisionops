@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 export default function HomePage() {
-  const [timeISO, setTimeISO] = useState("");
+
 
   const metrics = [
     { title: "Messages Parsed", value: 12405 },
@@ -38,16 +38,7 @@ export default function HomePage() {
     },
   ];
 
-  useEffect(() => {
-    const updateTime = () => {
-      setTimeISO(new Date().toISOString());
-    };
-
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
+  
 
   return (
     <div className="space-y-10">
@@ -59,7 +50,7 @@ export default function HomePage() {
           <p>Hash-Sync: Enabled</p>
           <p>Duplicates Skipped: 84</p>
         </div>
-        <p className="font-mono text-gray-500">{timeISO}</p>
+        
       </div>
 
       {/* Import + Metrics */}
