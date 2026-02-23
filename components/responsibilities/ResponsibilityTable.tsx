@@ -37,24 +37,46 @@ export default function ResponsibilityTable({
                     </tr>
                 </thead>
                 <tbody>
-                    {tasks.map((task) => (
-                        <tr
-                            key={task.id}
-                            onClick={() => onSelect(task)}
-                            className={`border-t cursor-pointer hover:bg-gray-50 transition ${selectedId === task.id
+                    {tasks.length > 0 ? (
+                        tasks.map((task) => (
+                            <tr
+                                key={task.id}
+                                onClick={() => onSelect(task)}
+                                className={`border-t cursor-pointer hover:bg-gray-50 transition ${selectedId === task.id
                                     ? "bg-blue-50 border-l-4 border-blue-500"
                                     : ""
                                 }`}
-                        >
-                            <td className="p-4 font-medium">{task.title}</td>
-                            <td className="p-4">{task.owner}</td>
-                            <td className="p-4">{task.due}</td>
-                            <td className="p-4">
-                                <StatusBadge status={task.status} />
-                            </td>
-                            <td className="p-4">{task.evidenceCount} msgs</td>
-                        </tr>
-                    ))}
+                            >
+                                <td className="p-4 font-medium">{task.title}</td>
+                                <td className="p-4">{task.owner}</td>
+                                <td className="p-4">{task.due}</td>
+                                <td className="p-4">
+                                    <StatusBadge status={task.status} />
+                                </td>
+                                <td className="p-4">{task.evidenceCount} msgs</td>
+                            </tr>
+                        ))
+                    ) : (
+                        Array.from({ length: 5 }).map((_, idx) => (
+                            <tr key={`placeholder-${idx}`} className="border-t">
+                                <td className="p-4 font-medium">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
+                                </td>
+                                <td className="p-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2" />
+                                </td>
+                                <td className="p-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-1/3" />
+                                </td>
+                                <td className="p-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-20" />
+                                </td>
+                                <td className="p-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-10" />
+                                </td>
+                            </tr>
+                        ))
+                    )}
                 </tbody>
             </table>
         </div>

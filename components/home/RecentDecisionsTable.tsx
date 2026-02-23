@@ -38,22 +38,44 @@ export default function RecentDecisionsTable({
                     </tr>
                 </thead>
                 <tbody className="text-gray-700">
-                    {decisions.map((item) => (
-                        <tr key={item.id} className="border-b">
-                            <td className="py-4">{item.title}</td>
-                            <td
-                                className={`py-4 font-medium ${item.status === "Final"
-                                        ? "text-green-600"
-                                        : "text-yellow-600"
-                                    }`}
-                            >
-                                {item.status}
-                            </td>
-                            <td className="py-4">{item.confidence}</td>
-                            <td className="py-4">{item.lastUpdated}</td>
-                            <td className="py-4 text-right">{item.evidenceCount}</td>
-                        </tr>
-                    ))}
+                    {decisions.length > 0 ? (
+                        decisions.map((item) => (
+                            <tr key={item.id} className="border-b">
+                                <td className="py-4">{item.title}</td>
+                                <td
+                                    className={`py-4 font-medium ${item.status === "Final"
+                                            ? "text-green-600"
+                                            : "text-yellow-600"
+                                        }`}
+                                >
+                                    {item.status}
+                                </td>
+                                <td className="py-4">{item.confidence}</td>
+                                <td className="py-4">{item.lastUpdated}</td>
+                                <td className="py-4 text-right">{item.evidenceCount}</td>
+                            </tr>
+                        ))
+                    ) : (
+                        Array.from({ length: 5 }).map((_, idx) => (
+                            <tr key={`placeholder-${idx}`} className="border-b">
+                                <td className="py-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
+                                </td>
+                                <td className="py-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2" />
+                                </td>
+                                <td className="py-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-1/3" />
+                                </td>
+                                <td className="py-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2" />
+                                </td>
+                                <td className="py-4 text-right">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-8 ml-auto" />
+                                </td>
+                            </tr>
+                        ))
+                    )}
                 </tbody>
             </table>
         </div>

@@ -38,26 +38,49 @@ export default function DecisionTable({
                     </tr>
                 </thead>
                 <tbody>
-                    {decisions.map((decision) => (
-                        <tr
-                            key={decision.id}
-                            onClick={() => onSelect(decision)}
-                            className={`border-t cursor-pointer hover:bg-gray-50 transition ${selectedId === decision.id
+                    {decisions.length > 0 ? (
+                        decisions.map((decision) => (
+                            <tr
+                                key={decision.id}
+                                onClick={() => onSelect(decision)}
+                                className={`border-t cursor-pointer hover:bg-gray-50 transition ${selectedId === decision.id
                                     ? "bg-blue-50 border-l-4 border-blue-500"
                                     : ""
                                 }`}
-                        >
-                            <td className="p-4 font-medium">{decision.title}</td>
-                            <td className="p-4">v{decision.version}</td>
-                            <td className="p-4">
-                                <StatusBadge status={decision.status} />
-                            </td>
-                            <td className="p-4 w-40">
-                                <ConfidenceBar value={decision.confidence} />
-                            </td>
-                            <td className="p-4">{decision.lastUpdated}</td>
-                        </tr>
-                    ))}
+                            >
+                                <td className="p-4 font-medium">{decision.title}</td>
+                                <td className="p-4">v{decision.version}</td>
+                                <td className="p-4">
+                                    <StatusBadge status={decision.status} />
+                                </td>
+                                <td className="p-4 w-40">
+                                    <ConfidenceBar value={decision.confidence} />
+                                </td>
+                                <td className="p-4">{decision.lastUpdated}</td>
+                            </tr>
+                        ))
+                    ) : (
+                        // Render placeholder empty rows so layout stays consistent
+                        Array.from({ length: 5 }).map((_, idx) => (
+                            <tr key={`placeholder-${idx}`} className="border-t">
+                                <td className="p-4 font-medium">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
+                                </td>
+                                <td className="p-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-8" />
+                                </td>
+                                <td className="p-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-20" />
+                                </td>
+                                <td className="p-4 w-40">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-full" />
+                                </td>
+                                <td className="p-4">
+                                    <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2" />
+                                </td>
+                            </tr>
+                        ))
+                    )}
                 </tbody>
             </table>
         </div>
