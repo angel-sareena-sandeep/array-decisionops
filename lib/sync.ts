@@ -81,14 +81,17 @@ export async function syncWhatsAppImport(args: {
   let inserted_messages = 0;
 
   for (const chunk of chunkArray(messageRows, CHUNK_SIZE)) {
-    const { count } = await db
+    const { data, error } = await db
       .from("messages")
       .insert(chunk, {
         onConflict: "chat_id,msg_sha256",
         ignoreDuplicates: true,
       })
       .select("id");
-    if (typeof count === "number") inserted_messages += count;
+    if (error) {
+      console.error("messages insert error:", error.message);
+    }
+    inserted_messages += data?.length ?? 0;
   }
 
   // ── 4) Insert import_messages ───────────────────────────────────────────────
@@ -117,6 +120,16 @@ export async function syncWhatsAppImport(args: {
       linked_import_messages += linkRows.length; // best-effort
     }
   }
+
+  // ── 5) Update chat_imports stats ──────────────────────────────────────────
+  await db
+    .from("chat_imports")
+    .update({
+      messages_parsed: parsed.length,
+      new_messages: inserted_messages,
+      duplicates_skipped: parsed.length - inserted_messages,
+    })
+    .eq("id", import_id);
 
   return {
     chat_id,
