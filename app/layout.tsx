@@ -16,7 +16,12 @@ export const metadata: Metadata = {
   title: "ARRAY",
   description: "From chat noise to traceable decisions",
   icons: {
-    icon: "/cube.png",
+    icon: [
+      { url: "/cube.png", type: "image/png", sizes: "any" },
+    ],
+    shortcut: [
+      { url: "/cube.png", type: "image/png" },
+    ],
   },
 };
 
@@ -27,6 +32,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        {/* Explicit type attribute required for Firefox to recognise the favicon */}
+        <link rel="icon" type="image/png" href="/cube.png" />
+        <link rel="shortcut icon" type="image/png" href="/cube.png" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
