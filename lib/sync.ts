@@ -55,14 +55,36 @@ export async function syncWhatsAppImport(args: {
     chatRow = data;
   }
 
+  if (!chatRow) {
+    throw new Error(`Failed to find or create chat for key "${chat_key}".`);
+  }
+
   const chat_id: string = chatRow.id;
 
-  // ── 2) Create chat_import ───────────────────────────────────────────────────
-  const { data: importRow } = await db
+  // ── 2) Find or create chat_import ────────────────────────────────────────────
+  // On re-import of the same file, a unique constraint on file_sha256 means the
+  // insert returns null data. Fall back to selecting the existing row.
+  let { data: importRow } = await db
     .from("chat_imports")
     .insert({ chat_id, source: "whatsapp_txt", file_name, file_sha256 })
     .select("id")
     .single();
+
+  if (!importRow) {
+    const { data: existing } = await db
+      .from("chat_imports")
+      .select("id")
+      .eq("chat_id", chat_id)
+      .eq("file_sha256", file_sha256)
+      .maybeSingle();
+    importRow = existing;
+  }
+
+  if (!importRow) {
+    throw new Error(
+      `Failed to find or create chat_import for file "${file_name}".`,
+    );
+  }
 
   const import_id: string = importRow.id;
 
@@ -83,13 +105,13 @@ export async function syncWhatsAppImport(args: {
   for (const chunk of chunkArray(messageRows, CHUNK_SIZE)) {
     const { data, error } = await db
       .from("messages")
-      .insert(chunk, {
+      .upsert(chunk, {
         onConflict: "chat_id,msg_sha256",
         ignoreDuplicates: true,
       })
       .select("id");
     if (error) {
-      console.error("messages insert error:", error.message);
+      console.error("messages upsert error:", error.message);
     }
     inserted_messages += data?.length ?? 0;
   }
@@ -112,7 +134,7 @@ export async function syncWhatsAppImport(args: {
         message_id: m.id,
       }));
 
-      await db.from("import_messages").insert(linkRows, {
+      await db.from("import_messages").upsert(linkRows, {
         onConflict: "import_id,message_id",
         ignoreDuplicates: true,
       });
