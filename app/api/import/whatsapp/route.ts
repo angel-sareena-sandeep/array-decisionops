@@ -6,14 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { syncWhatsAppImport } from "@/lib/sync";
-import { parseChat } from "@/lib/parser";
-import {
-  extractDecisions,
-  extractResponsibilities,
-  persistDecisions,
-  persistResponsibilities,
-  MessageInput,
-} from "@/lib/decisionEngine";
+import { runAnalysisPipeline } from "@/lib/orchestrate";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: unknown;
@@ -72,38 +65,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { chat_id, import_id, total_parsed, inserted_messages } = syncResult;
   const duplicates_skipped = total_parsed - inserted_messages;
 
-  // ── Extract & persist decisions + responsibilities ─────────────────────────
-  const parsed = parseChat(content);
-  const messageInputs: MessageInput[] = parsed.map((m) => ({
-    sender: m.sender,
-    message_text: m.message_text,
-    message_hash: m.message_hash,
-    timestamp: m.timestamp,
-  }));
-
-  const decisions = extractDecisions(messageInputs);
-  const responsibilities = extractResponsibilities(messageInputs);
-
+  // ── Analysis pipeline ───────────────────────────────────────────────────────
+  // Fetch messages via import_messages → messages (DB-linked set, not re-parsed),
+  // then extract and persist decisions + responsibilities (both idempotent).
+  let analysisResult: Awaited<ReturnType<typeof runAnalysisPipeline>>;
   try {
-    await persistDecisions({
+    analysisResult = await runAnalysisPipeline({
       supabase,
       chat_id,
-      decisions: decisions.items,
-      evidenceByDecisionId: decisions.evidenceByDecisionId,
+      import_id,
     });
   } catch (err: unknown) {
-    console.error("persistDecisions error:", err);
-  }
-
-  try {
-    await persistResponsibilities({
-      supabase,
-      chat_id,
-      responsibilities: responsibilities.items,
-      evidenceByResponsibilityId: responsibilities.evidenceByResponsibilityId,
-    });
-  } catch (err: unknown) {
-    console.error("persistResponsibilities error:", err);
+    console.error("runAnalysisPipeline error:", err);
+    // Analysis failure is non-fatal: sync already succeeded.
+    analysisResult = {
+      messages_analysed: 0,
+      decisions_detected: 0,
+      responsibilities_detected: 0,
+    };
   }
 
   return NextResponse.json({
@@ -112,7 +91,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     messages_parsed: total_parsed,
     new_messages: inserted_messages,
     duplicates_skipped,
-    decisions_detected: decisions.items.length,
-    responsibilities_detected: responsibilities.items.length,
+    decisions_detected: analysisResult.decisions_detected,
+    responsibilities_detected: analysisResult.responsibilities_detected,
   });
 }

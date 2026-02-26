@@ -2,7 +2,10 @@
  * decisionEngine.ts
  *
  * Deterministic MVP extraction and persistence for decisions and responsibilities.
- * English-only triggers. No NLP date parsing. 
+ * English-only triggers. No NLP date parsing.
+ *
+ * Trigger patterns are defined in ./triggers and can be extended without
+ * modifying this file.
  */
 
 import {
@@ -12,6 +15,17 @@ import {
   ResponsibilityStatus,
 } from "./contracts";
 import { generateHash } from "./hash";
+import {
+  DECISION_FINAL_TRIGGERS,
+  DECISION_TENTATIVE_TRIGGERS,
+  OPTION_SELECT_RE,
+  RESP_SELF_RE,
+  RESP_OTHER_RE,
+  RESP_PLEASE_ACTION_RE,
+  RESP_GENERAL_TRIGGER_PHRASES,
+  RESP_DEADLINE_RE,
+  RESP_DEADLINE_ACTION_RE,
+} from "./triggers";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,21 +79,6 @@ function truncate(text: string, maxLen: number): string {
 }
 
 // ─── Decision extraction ───────────────────────────────────────────────────────
-
-const DECISION_FINAL_TRIGGERS = ["final decision", "we decided"];
-const DECISION_TENTATIVE_TRIGGERS = [
-  "let's go with",
-  "we will go with",
-  "we're going with",
-  "we are going with",
-  "the plan is",
-];
-
-/**
- * Option selection: match "option a" or "option b" only when clearly selecting.
- * Require the word "option" followed by a single letter a-z.
- */
-const OPTION_SELECT_RE = /\boption\s+[a-z]\b/i;
 
 function detectDecisionStatus(lower: string): DecisionStatus | null {
   for (const trigger of DECISION_FINAL_TRIGGERS) {
@@ -143,22 +142,16 @@ export function extractDecisions(
 
 // ─── Responsibility extraction ─────────────────────────────────────────────────
 
-const RESP_SELF_RE = /\b(i will|i'll)\b/i;
-const RESP_OTHER_RE = /\b(can you|you will|need you to)\b/i;
-const RESP_GENERAL_TRIGGERS = ["please", "handle this", "take care of"];
-const RESP_DEADLINE_RE = /\bdeadline\b/i;
-
 function detectResponsibilityTrigger(lower: string, original: string): boolean {
   if (RESP_SELF_RE.test(original)) return true;
   if (RESP_OTHER_RE.test(lower)) return true;
-  for (const t of RESP_GENERAL_TRIGGERS) {
-    if (lower.includes(t)) return true;
+  // "please" only fires when followed closely by a concrete action verb
+  if (RESP_PLEASE_ACTION_RE.test(original)) return true;
+  for (const phrase of RESP_GENERAL_TRIGGER_PHRASES) {
+    if (lower.includes(phrase)) return true;
   }
-  // "deadline" only when task-like (contains a verb or action hint)
-  if (
-    RESP_DEADLINE_RE.test(lower) &&
-    /\b(by|before|until|submit|send|complete|finish|deliver)\b/i.test(lower)
-  ) {
+  // "deadline" only when task-like (contains a task-action word)
+  if (RESP_DEADLINE_RE.test(lower) && RESP_DEADLINE_ACTION_RE.test(lower)) {
     return true;
   }
   return false;
@@ -257,6 +250,16 @@ export async function persistDecisions(args: {
     if (!threadRow) continue;
     const thread_id: string = threadRow.id;
 
+    // App-level idempotency: skip if this thread+version is already persisted
+    const { data: existingDec } = await db
+      .from("decisions")
+      .select("id")
+      .eq("thread_id", thread_id)
+      .eq("version_no", dec.version)
+      .maybeSingle();
+
+    if (existingDec) continue;
+
     // Insert decision row
     const { data: decRow, error: decErr } = await db
       .from("decisions")
@@ -271,7 +274,7 @@ export async function persistDecisions(args: {
       .single();
 
     if (decErr || !decRow) {
-      // Likely duplicate version_no — skip
+      console.error("decisions insert error:", decErr?.message);
       continue;
     }
     decisions_inserted++;
@@ -340,6 +343,17 @@ export async function persistResponsibilities(args: {
 
     const task_text =
       resp.title + (resp.description ? " \u2014 " + resp.description : "");
+
+    // App-level idempotency: skip if this (chat_id, owner, task_text) already exists
+    const { data: existing } = await db
+      .from("responsibilities")
+      .select("id")
+      .eq("chat_id", chat_id)
+      .eq("owner", resp.owner)
+      .eq("task_text", task_text)
+      .maybeSingle();
+
+    if (existing) continue;
 
     const { error } = await db.from("responsibilities").insert({
       chat_id,
