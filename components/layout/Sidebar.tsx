@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 const navItems = [
@@ -15,8 +16,27 @@ export default function Sidebar() {
     return (
         <aside className="w-64 bg-white border-r p-6 flex flex-col">
             <div className="mb-8">
-                <h2 className="text-xl font-bold text-gray-900">ARRAY</h2>
-                <p className="text-sm font-medium text-gray-500 mt-1">
+                <Link href="/home" className="flex items-center">
+                    {/* Mobile: cube only */}
+                    <Image
+                        src="/cube.png"
+                        alt="ARRAY"
+                        width={36}
+                        height={36}
+                        className="block sm:hidden"
+                        priority
+                    />
+                    {/* Tablet/Desktop: full logo with text */}
+                    <Image
+                        src="/logo-full.png"
+                        alt="ARRAY"
+                        width={140}
+                        height={36}
+                        className="hidden sm:block"
+                        priority
+                    />
+                </Link>
+                <p className="text-sm font-medium text-gray-500 mt-2">
                     From chat noise to traceable decisions
                 </p>
             </div>

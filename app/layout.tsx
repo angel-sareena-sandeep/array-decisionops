@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ARRAY",
   description: "From chat noise to traceable decisions",
+  icons: {
+    icon: "/cube.png",
+  },
 };
 
 export default function RootLayout({
