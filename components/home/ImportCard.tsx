@@ -58,7 +58,10 @@ export default function ImportCard() {
       // Strip extension, then strip WhatsApp re-export suffixes like " (1)", "(2)", "_2"
       // so that "WhatsApp Chat(1).txt" maps to the same chat as "WhatsApp Chat.txt".
       const baseName = selectedFile.name.replace(/\.[^.]+$/, "");
-      const chat_name = baseName.replace(/\s*\(\d+\)$/, "").replace(/[-_]\d+$/, "").trim();
+      const chat_name = baseName
+        .replace(/\s*\(\d+\)$/, "")
+        .replace(/[-_]\d+$/, "")
+        .trim();
       const file_name = selectedFile.name;
 
       const res = await fetch("/api/import/whatsapp", {
@@ -76,8 +79,8 @@ export default function ImportCard() {
       setStatus("success");
       setMessage(
         `Import complete — ${json.new_messages ?? 0} new messages, ` +
-          `${json.decisions_detected ?? 0} decisions, ` +
-          `${json.responsibilities_detected ?? 0} responsibilities.`,
+          `${json.decisions_new ?? 0} new decisions (${json.decisions_detected ?? 0} detected), ` +
+          `${json.responsibilities_new ?? 0} new responsibilities (${json.responsibilities_detected ?? 0} detected).`,
       );
       // Persist chat_id so all pages can query the correct dataset
       if (json.chat_id) {

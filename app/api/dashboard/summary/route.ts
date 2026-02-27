@@ -81,20 +81,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     latest_decisions_count = decCount ?? 0;
   }
 
-  // ── New messages since last import ─────────────────────────────────────────
-  let new_msgs_since_last_import_count = 0;
-  if (last_import_at) {
-    const { count: newMsgCount, error: newMsgErr } = await supabase
-      .from("messages")
-      .select("id", { count: "exact", head: true })
-      .eq("chat_id", chat_id)
-      .gt("msg_ts", last_import_at);
-    if (newMsgErr) {
-      return NextResponse.json({ error: newMsgErr.message }, { status: 500 });
-    }
-    new_msgs_since_last_import_count = newMsgCount ?? 0;
-  }
-
   return NextResponse.json({
     last_import_at,
     messages_parsed_latest,
@@ -102,6 +88,5 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     duplicates_skipped_latest,
     open_responsibilities_count: openRespCount ?? 0,
     latest_decisions_count,
-    new_msgs_since_last_import_count,
   });
 }

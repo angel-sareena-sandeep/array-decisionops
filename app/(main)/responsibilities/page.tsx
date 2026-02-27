@@ -39,6 +39,7 @@ export default function ResponsibilitiesPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadTasks();
     const onImport = () => loadTasks();
     const onCleared = () => setAllTasks([]);

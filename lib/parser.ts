@@ -18,15 +18,21 @@ export type ParsedMessage = {
 /**
  * Regex to detect the start of a new WhatsApp message line.
  *
- * Supports both common WhatsApp export formats:
+ * Supports common WhatsApp export formats:
  *   12-hour: M/D/YY, H:MM AM - Sender: Message  (US / older iOS)
  *   24-hour: DD/MM/YYYY, HH:MM - Sender: Message (EU / Android / newer iOS)
+ *   Bracket:  [DD/MM/YYYY, HH:MM:SS AM] Sender: Message  (newer iOS)
+ *
+ * The separator between timestamp and sender can be:
+ *   - a regular ASCII hyphen-minus  "-" (U+002D)
+ *   - an en-dash  "–" (U+2013)  used by many Android / newer iOS builds
+ *   - an em-dash  "—" (U+2014)
  *
  * The ampm group is optional; when absent the time is treated as 24-hour.
  * Named groups: date, time, ampm (optional), sender (optional), message_text
  */
 const WHATSAPP_LINE_REGEX =
-  /^(?<date>\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}),\s+(?<time>\d{1,2}:\d{2})(?::?\d{2})?\s*(?<ampm>[AaPp][Mm])?\s*-\s*(?:(?<sender>[^:]+?):\s*)?(?<message_text>.*)$/
+  /^\[?(?<date>\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}),\s*(?<time>\d{1,2}:\d{2})(?::?\d{2})?\s*(?<ampm>[AaPp][Mm])?\]?\s*[-\u2013\u2014]\s*(?:(?<sender>[^:]+?):\s*)?(?<message_text>.*)$/;
 
 /**
  * Converts WhatsApp date/time parts to an ISO 8601 string (UTC, ending in Z).
@@ -121,6 +127,9 @@ function computeMessageHash(
 export function parseChat(content: string): ParsedMessage[] {
   const results: ParsedMessage[] = [];
 
+  // Strip a leading UTF-8 BOM (\uFEFF) that some WhatsApp exports include
+  const stripped = content.startsWith("\uFEFF") ? content.slice(1) : content;
+
   // Holds the message currently being built (message_hash placeholder "")
   let current: ParsedMessage | null = null;
 
@@ -137,7 +146,7 @@ export function parseChat(content: string): ParsedMessage[] {
     }
   };
 
-  const lines = content.split(/\n/);
+  const lines = stripped.split(/\n/);
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i];

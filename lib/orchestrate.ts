@@ -31,7 +31,9 @@ import {
 export type AnalysisResult = {
   messages_analysed: number;
   decisions_detected: number;
+  decisions_new: number;
   responsibilities_detected: number;
+  responsibilities_new: number;
 };
 
 // ─── Chunking helper ──────────────────────────────────────────────────────────
@@ -66,13 +68,22 @@ export async function runAnalysisPipeline(args: {
   const { supabase, chat_id, import_id } = args;
 
   // ── Step 1: Fetch messages for this import from the DB ───────────────────
-  const messages = await fetchImportMessages(supabase, import_id);
+  // Primary: messages linked to this specific import via import_messages.
+  // Fallback: all messages for the chat — guards against import_messages
+  // not being fully populated (e.g. all-duplicate second import edge cases).
+  let messages = await fetchImportMessages(supabase, import_id);
+
+  if (messages.length === 0) {
+    messages = await fetchChatMessages(supabase, chat_id);
+  }
 
   if (messages.length === 0) {
     return {
       messages_analysed: 0,
       decisions_detected: 0,
+      decisions_new: 0,
       responsibilities_detected: 0,
+      responsibilities_new: 0,
     };
   }
 
@@ -94,7 +105,7 @@ export async function runAnalysisPipeline(args: {
   // For now: pass extraction results directly to persistence.
 
   // ── Step 4: Persist decisions (idempotent via thread_key + version_no) ───
-  await persistDecisions({
+  const decPersist = await persistDecisions({
     supabase: supabase as unknown,
     chat_id,
     decisions: decisionsResult.items,
@@ -102,7 +113,7 @@ export async function runAnalysisPipeline(args: {
   });
 
   // ── Step 5: Persist responsibilities (idempotent via app-level dedupe) ───
-  await persistResponsibilities({
+  const respPersist = await persistResponsibilities({
     supabase: supabase as unknown,
     chat_id,
     responsibilities: responsibilitiesResult.items,
@@ -113,7 +124,9 @@ export async function runAnalysisPipeline(args: {
   return {
     messages_analysed: messages.length,
     decisions_detected: decisionsResult.items.length,
+    decisions_new: decPersist.decisions_inserted,
     responsibilities_detected: responsibilitiesResult.items.length,
+    responsibilities_new: respPersist.inserted,
   };
 }
 
@@ -126,6 +139,59 @@ export async function runAnalysisPipeline(args: {
  * Uses chunked IN queries to avoid URL/query length limits on large imports.
  * Only selects the columns required by the extraction engine.
  */
+/**
+ * Fetches ALL messages for a chat, sorted chronologically.
+ * Used as a fallback when the import-scoped fetch returns nothing.
+ */
+async function fetchChatMessages(
+  supabase: SupabaseClient,
+  chat_id: string,
+): Promise<MessageInput[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+
+  const results: MessageInput[] = [];
+
+  let from = 0;
+  // Paginate in large chunks to avoid response-size limits
+  while (true) {
+    const { data: rows, error } = await db
+      .from("messages")
+      .select("sender, text, msg_sha256, msg_ts")
+      .eq("chat_id", chat_id)
+      .order("msg_ts", { ascending: true })
+      .range(from, from + CHUNK_SIZE - 1);
+
+    if (error) {
+      console.error(
+        "orchestrate: fetchChatMessages query error:",
+        error.message,
+      );
+      break;
+    }
+    if (!rows || rows.length === 0) break;
+
+    for (const row of rows as {
+      sender: string;
+      text: string;
+      msg_sha256: string;
+      msg_ts: string;
+    }[]) {
+      results.push({
+        sender: row.sender,
+        message_text: row.text,
+        message_hash: row.msg_sha256,
+        timestamp: row.msg_ts,
+      });
+    }
+
+    if (rows.length < CHUNK_SIZE) break;
+    from += CHUNK_SIZE;
+  }
+
+  return results;
+}
+
 async function fetchImportMessages(
   supabase: SupabaseClient,
   import_id: string,

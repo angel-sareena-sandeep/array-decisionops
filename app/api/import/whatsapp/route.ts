@@ -81,7 +81,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     analysisResult = {
       messages_analysed: 0,
       decisions_detected: 0,
+      decisions_new: 0,
       responsibilities_detected: 0,
+      responsibilities_new: 0,
     };
   }
 
@@ -92,6 +94,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     new_messages: inserted_messages,
     duplicates_skipped,
     decisions_detected: analysisResult.decisions_detected,
+    decisions_new: analysisResult.decisions_new,
     responsibilities_detected: analysisResult.responsibilities_detected,
+    responsibilities_new: analysisResult.responsibilities_new,
   });
 }

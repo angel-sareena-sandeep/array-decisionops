@@ -40,6 +40,7 @@ export default function DecisionsPage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadDecisions();
     const onImport = () => loadDecisions();
     const onCleared = () => setAllDecisions([]);

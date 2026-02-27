@@ -14,7 +14,6 @@ type Summary = {
   duplicates_skipped_latest: number;
   open_responsibilities_count: number;
   latest_decisions_count: number;
-  new_msgs_since_last_import_count: number;
 };
 
 function fmt(n: number | null | undefined): string {
@@ -57,6 +56,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
     const onImport = () => loadData();
     const onCleared = () => {
@@ -95,10 +95,6 @@ export default function HomePage() {
       title: "Open Responsibilities",
       value: fmt(summary?.open_responsibilities_count),
     },
-    {
-      title: "New Msgs Since Import",
-      value: fmt(summary?.new_msgs_since_last_import_count),
-    },
   ];
 
   return (
@@ -126,7 +122,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-6">
+      <div className="grid grid-cols-3 gap-6">
         {summaryCards.map((item, index) => (
           <StatCard key={index} title={item.title} value={item.value} />
         ))}

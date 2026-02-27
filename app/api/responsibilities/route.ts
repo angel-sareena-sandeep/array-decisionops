@@ -35,7 +35,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Build query ─────────────────────────────────────────────────────────────
   let query = supabase
     .from("responsibilities")
-    .select("id, owner, task_text, status, due_date, created_at, source_message_id")
+    .select(
+      "id, owner, task_text, status, due_date, created_at, source_message_id",
+    )
     .eq("chat_id", chat_id)
     .order("created_at", { ascending: false });
 
@@ -52,25 +54,49 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json([] as ResponsibilityItem[]);
   }
 
+  // ── Batch-fetch msg_ts for all source messages ──────────────────────────────
+  type RespRow = {
+    id: string;
+    owner: string;
+    task_text: string;
+    status: string;
+    due_date: string | null;
+    created_at: string;
+    source_message_id: string | null;
+  };
+
+  const respRows = rows as RespRow[];
+
+  const sourceIds = respRows
+    .map((r) => r.source_message_id)
+    .filter((id): id is string => id !== null);
+
+  const msgTsById: Record<string, string> = {};
+  if (sourceIds.length > 0) {
+    const { data: msgRows } = await supabase
+      .from("messages")
+      .select("id, msg_ts")
+      .in("id", sourceIds);
+
+    if (msgRows) {
+      for (const m of msgRows as { id: string; msg_ts: string }[]) {
+        msgTsById[m.id] = m.msg_ts;
+      }
+    }
+  }
+
   // ── Map DB -> ResponsibilityItem ────────────────────────────────────────────
-  let items: ResponsibilityItem[] = (
-    rows as Array<{
-      id: string;
-      owner: string;
-      task_text: string;
-      status: string;
-      due_date: string | null;
-      created_at: string;
-    }>
-  ).map((row) => ({
+  let items: ResponsibilityItem[] = respRows.map((row) => ({
     id: row.id,
     title: row.task_text,
     description: "",
     owner: row.owner,
     due: row.due_date ?? "",
     status: row.status as ResponsibilityStatus,
-    timestamp: row.created_at,
-    evidenceCount: (row as unknown as { source_message_id: string | null }).source_message_id ? 1 : 0,
+    timestamp: row.source_message_id
+      ? (msgTsById[row.source_message_id] ?? row.created_at)
+      : row.created_at,
+    evidenceCount: row.source_message_id ? 1 : 0,
   }));
 
   // ── Apply in-code filters ───────────────────────────────────────────────────
