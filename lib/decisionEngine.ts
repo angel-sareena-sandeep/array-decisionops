@@ -241,7 +241,7 @@ export async function persistDecisions(args: {
     if (!threadRow) {
       const { data: inserted } = await db
         .from("decision_threads")
-        .insert({ chat_id, thread_key, title: dec.title })
+        .insert({ chat_id, thread_key })
         .select("id")
         .single();
       threadRow = inserted;
@@ -271,6 +271,7 @@ export async function persistDecisions(args: {
         confidence: dec.confidence,
         decision_title: dec.title,
         final_outcome: dec.explanation,
+        decided_at: dec.timestamp ?? null,
       })
       .select("id")
       .single();
@@ -369,5 +370,5 @@ export async function persistResponsibilities(args: {
     if (!error) inserted++;
   }
 
-  return { inserted }; 
+  return { inserted };
 }
