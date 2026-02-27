@@ -193,6 +193,7 @@ export function extractResponsibilities(
       due: "",
       status: "Open" as ResponsibilityStatus,
       timestamp: msg.timestamp,
+      evidenceCount: 0,
     };
 
     items.push(item);
@@ -268,6 +269,7 @@ export async function persistDecisions(args: {
         version_no: dec.version,
         status: dec.status,
         confidence: dec.confidence,
+        decision_title: dec.title,
         final_outcome: dec.explanation,
       })
       .select("id")
@@ -367,5 +369,5 @@ export async function persistResponsibilities(args: {
     if (!error) inserted++;
   }
 
-  return { inserted };
+  return { inserted }; 
 }

@@ -19,8 +19,42 @@
  * Matched case-insensitively against the lowercased message text.
  */
 export const DECISION_FINAL_TRIGGERS: string[] = [
+  // Direct declaration
   "final decision",
   "we decided",
+  "it's decided",
+  "it is decided",
+  "we've decided",
+  "we have decided",
+  "decision made",
+  "decision is",
+  "confirmed:",
+  "confirmed.",
+  // Agreement & approval
+  "approved",
+  "we approved",
+  "all agreed",
+  "everyone agreed",
+  "we all agreed",
+  // Selection locked in
+  "go ahead with",
+  "going ahead with",
+  "we chose",
+  "we have chosen",
+  "we selected",
+  "we settled on",
+  "we'll use",
+  "we will use",
+  "we're using",
+  "we are using",
+  // Conclusive
+  "that's final",
+  "that is final",
+  "so it's",
+  "done, we",
+  "ok, decided",
+  "ok decided",
+  "alright, decided",
 ];
 
 /**
@@ -28,11 +62,41 @@ export const DECISION_FINAL_TRIGGERS: string[] = [
  * Matched case-insensitively against the lowercased message text.
  */
 export const DECISION_TENTATIVE_TRIGGERS: string[] = [
+  // Direction setting
   "let's go with",
+  "lets go with",
   "we will go with",
   "we're going with",
   "we are going with",
   "the plan is",
+  "our plan is",
+  "the plan will be",
+  // Proposals
+  "i suggest",
+  "i propose",
+  "proposal:",
+  "proposed:",
+  "i think we should",
+  "i think we go",
+  "we should go with",
+  "we could go with",
+  "maybe we go with",
+  // Soft agreement
+  "sounds like a plan",
+  "sounds good, let's",
+  "agreed on",
+  "we agreed on",
+  "makes sense to go",
+  // Action direction
+  "let's do",
+  "let's use",
+  "going with",
+  "we go with",
+  "we'll go ahead",
+  "we will go ahead",
+  "ideally we",
+  "moving forward with",
+  "we move forward with",
 ];
 
 /**
@@ -52,16 +116,17 @@ export const OPTION_SELECT_RE = /\boption\s+[a-z]\b/i;
 /**
  * Matches self-assignment: speaker commits to a task.
  * Tested against the original (non-lowercased) message text.
- * Examples: "I will send the report", "I'll handle this"
+ * Examples: "I will send the report", "I'll handle this", "I'm going to sort this"
  */
-export const RESP_SELF_RE = /\b(i will|i'll)\b/i;
+export const RESP_SELF_RE = /\b(i will|i'll|i'm going to|i am going to|i can do|i'll take)\b/i;
 
 /**
  * Matches delegation to another participant.
  * Tested against the lowercased message text.
  * Examples: "can you review this?", "you will need to submit", "I need you to update"
  */
-export const RESP_OTHER_RE = /\b(can you|you will|need you to)\b/i;
+export const RESP_OTHER_RE =
+  /\b(can you|you will|need you to|you need to|could you|would you|please ensure|are you able to)\b/i;
 
 /**
  * "please" ONLY triggers a responsibility when it is immediately followed
@@ -89,8 +154,49 @@ export const RESP_PLEASE_ACTION_RE =
  * Matched case-insensitively against the lowercased message text.
  */
 export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
+  // Classic delegation
   "handle this",
   "take care of",
+  // Self + other commitment phrases
+  "will do",
+  "on it",
+  "i'm on it",
+  "im on it",
+  "i am on it",
+  "i will handle",
+  "i will send",
+  "i will update",
+  "i will check",
+  "i will prepare",
+  "i will follow up",
+  "i will review",
+  "i will confirm",
+  "i will share",
+  "i will coordinate",
+  "i will sort",
+  "i will get",
+  "i will make",
+  // Ownership & assignment
+  "follow up with",
+  "responsible for",
+  "assigned to",
+  "action item",
+  "your task",
+  "your action",
+  // Task acknowledgement
+  "noted, i will",
+  "noted, will",
+  "sure, i'll",
+  "sure, i will",
+  "ok i will",
+  "ok i'll",
+  "alright i will",
+  "alright i'll",
+  // Due + deadline variants
+  "need to be done by",
+  "must be done by",
+  "due on",
+  "due by",
 ];
 
 /**
@@ -101,4 +207,3 @@ export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
 export const RESP_DEADLINE_RE = /\bdeadline\b/i;
 export const RESP_DEADLINE_ACTION_RE =
   /\b(by|before|until|submit|send|complete|finish|deliver)\b/i;
-  

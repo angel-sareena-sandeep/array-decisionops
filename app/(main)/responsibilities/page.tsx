@@ -16,7 +16,7 @@ function apiToTask(item: ResponsibilityItem, idx: number): Task {
     owner: item.owner,
     due: item.due ?? "",
     status: item.status,
-    evidenceCount: 0,
+    evidenceCount: item.evidenceCount ?? 0,
     description: item.description ?? "",
     timestamp: item.timestamp,
   };

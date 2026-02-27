@@ -55,7 +55,10 @@ export default function ImportCard() {
     try {
       const content = await selectedFile.text();
       const file_sha256 = await computeSha256(content);
-      const chat_name = selectedFile.name.replace(/\.[^.]+$/, "");
+      // Strip extension, then strip WhatsApp re-export suffixes like " (1)", "(2)", "_2"
+      // so that "WhatsApp Chat(1).txt" maps to the same chat as "WhatsApp Chat.txt".
+      const baseName = selectedFile.name.replace(/\.[^.]+$/, "");
+      const chat_name = baseName.replace(/\s*\(\d+\)$/, "").replace(/[-_]\d+$/, "").trim();
       const file_name = selectedFile.name;
 
       const res = await fetch("/api/import/whatsapp", {

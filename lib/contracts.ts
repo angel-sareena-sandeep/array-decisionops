@@ -26,4 +26,5 @@ export interface ResponsibilityItem {
   status: ResponsibilityStatus;
   description: string;
   timestamp: string; // ISO string
+  evidenceCount: number;
 }

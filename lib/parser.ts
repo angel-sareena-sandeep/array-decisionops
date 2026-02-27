@@ -18,20 +18,29 @@ export type ParsedMessage = {
 /**
  * Regex to detect the start of a new WhatsApp message line.
  *
- * Matches format: M/D/YY, H:MM am/pm - Sender: Message
- * Named groups: date, time, ampm, sender (optional), message_text
+ * Supports both common WhatsApp export formats:
+ *   12-hour: M/D/YY, H:MM AM - Sender: Message  (US / older iOS)
+ *   24-hour: DD/MM/YYYY, HH:MM - Sender: Message (EU / Android / newer iOS)
+ *
+ * The ampm group is optional; when absent the time is treated as 24-hour.
+ * Named groups: date, time, ampm (optional), sender (optional), message_text
  */
 const WHATSAPP_LINE_REGEX =
-  /^(?<date>\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}),\s+(?<time>\d{1,2}:\d{2})\s*(?<ampm>[AaPp][Mm])\s*-\s*(?:(?<sender>[^:]+?):\s*)?(?<message_text>.*)$/;
+  /^(?<date>\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}),\s+(?<time>\d{1,2}:\d{2})(?::?\d{2})?\s*(?<ampm>[AaPp][Mm])?\s*-\s*(?:(?<sender>[^:]+?):\s*)?(?<message_text>.*)$/
 
 /**
  * Converts WhatsApp date/time parts to an ISO 8601 string (UTC, ending in Z).
  * - Auto-detects DD/MM/YY vs M/D/YY: if first part > 12 it must be the day.
  * - 2-digit year -> 2000-2099
- * - Handles 12h -> 24h (12:xx AM -> 0:xx, 12:xx PM -> 12:xx)
+ * - When ampm is provided: treats time as 12-hour (12:xx AM -> 0:xx, 12:xx PM -> 12:xx).
+ * - When ampm is absent/empty: treats time as 24-hour (no conversion).
  * - Uses Date.UTC() so output is identical regardless of the machine's timezone.
  */
-function parseTimestampToISO(date: string, time: string, ampm: string): string {
+function parseTimestampToISO(
+  date: string,
+  time: string,
+  ampm: string | undefined,
+): string {
   const dateParts = date.split(/[\/.\-]/);
   const p0 = parseInt(dateParts[0], 10);
   const p1 = parseInt(dateParts[1], 10);
@@ -45,10 +54,14 @@ function parseTimestampToISO(date: string, time: string, ampm: string): string {
   const [hourStr, minuteStr] = time.split(":");
   let hour = parseInt(hourStr, 10);
   const minute = parseInt(minuteStr, 10);
-  const isPM = ampm.toLowerCase() === "pm";
 
-  if (isPM && hour !== 12) hour += 12;
-  if (!isPM && hour === 12) hour = 0;
+  if (ampm) {
+    // 12-hour conversion
+    const isPM = ampm.toLowerCase() === "pm";
+    if (isPM && hour !== 12) hour += 12;
+    if (!isPM && hour === 12) hour = 0;
+  }
+  // else: 24-hour — use hour as-is
 
   return new Date(
     Date.UTC(year, month - 1, day, hour, minute, 0, 0),

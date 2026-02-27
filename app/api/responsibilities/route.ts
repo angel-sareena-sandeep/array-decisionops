@@ -35,7 +35,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Build query ─────────────────────────────────────────────────────────────
   let query = supabase
     .from("responsibilities")
-    .select("id, owner, task_text, status, due_date, created_at")
+    .select("id, owner, task_text, status, due_date, created_at, source_message_id")
     .eq("chat_id", chat_id)
     .order("created_at", { ascending: false });
 
@@ -70,6 +70,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     due: row.due_date ?? "",
     status: row.status as ResponsibilityStatus,
     timestamp: row.created_at,
+    evidenceCount: (row as unknown as { source_message_id: string | null }).source_message_id ? 1 : 0,
   }));
 
   // ── Apply in-code filters ───────────────────────────────────────────────────

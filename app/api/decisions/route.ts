@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { DecisionItem, DecisionStatus } from "@/lib/contracts";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
+  try {
   const params = req.nextUrl.searchParams;
   const chat_id = params.get("chat_id");
 
@@ -46,33 +47,30 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Get decision_threads for this chat ──────────────────────────────────────
   const { data: threadRows, error: threadErr } = await supabase
     .from("decision_threads")
-    .select("id, title")
+    .select("id")
     .eq("chat_id", chat_id);
 
   if (threadErr) {
+    console.error("[GET /api/decisions] decision_threads query error:", threadErr.message, threadErr);
     return NextResponse.json({ error: threadErr.message }, { status: 500 });
   }
   if (!threadRows || threadRows.length === 0) {
     return NextResponse.json([] as DecisionItem[]);
   }
 
-  const threadMap: Record<string, string> = {};
-  const threadIds: string[] = [];
-  for (const t of threadRows as { id: string; title: string }[]) {
-    threadIds.push(t.id);
-    threadMap[t.id] = t.title;
-  }
+  const threadIds: string[] = (threadRows as { id: string }[]).map((t) => t.id);
 
   // ── Get all decisions for those threads ordered by created_at desc ──────────
   const { data: decRows, error: decErr } = await supabase
     .from("decisions")
     .select(
-      "id, thread_id, version_no, status, confidence, final_outcome, created_at",
+      "id, thread_id, version_no, status, confidence, decision_title, final_outcome, created_at",
     )
     .in("thread_id", threadIds)
     .order("created_at", { ascending: false });
 
   if (decErr) {
+    console.error("[GET /api/decisions] decisions query error:", decErr.message, decErr);
     return NextResponse.json({ error: decErr.message }, { status: 500 });
   }
   if (!decRows || decRows.length === 0) {
@@ -87,6 +85,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     version_no: number;
     status: string;
     confidence: number;
+    decision_title: string;
     final_outcome: string;
     created_at: string;
   }>) {
@@ -98,7 +97,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   // ── Map DB -> DecisionItem ──────────────────────────────────────────────────
   let items: DecisionItem[] = Object.values(latestByThread).map((row) => ({
     id: row.id,
-    title: threadMap[row.thread_id] ?? "",
+    title: (row as unknown as { decision_title: string }).decision_title ?? "",
     version: row.version_no,
     status: row.status as DecisionStatus,
     confidence: row.confidence,
@@ -129,4 +128,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   items = items.slice(offset, offset + limit);
 
   return NextResponse.json(items);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[GET /api/decisions] Unhandled error:", message, err);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
