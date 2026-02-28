@@ -4,6 +4,7 @@ import StatusBadge from "@/components/ui/StatusBadge";
 
 export type Task = {
     id: number;
+    rawId: string;
     title: string;
     owner: string;
     due: string;

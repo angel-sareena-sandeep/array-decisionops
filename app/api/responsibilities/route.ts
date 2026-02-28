@@ -112,3 +112,55 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
   return NextResponse.json(items);
 }
+
+/**
+ * PATCH /api/responsibilities
+ * Body: { id: string; status: "Open" | "Completed" | "Overdue" }
+ * Updates the status of a single responsibility row.
+ */
+export async function PATCH(req: NextRequest): Promise<NextResponse> {
+  let body: { id?: string; status?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const { id, status } = body;
+
+  if (!id || !status) {
+    return NextResponse.json(
+      { error: "Body must include 'id' and 'status'." },
+      { status: 400 },
+    );
+  }
+
+  const validStatuses: ResponsibilityStatus[] = ["Open", "Completed", "Overdue"];
+  if (!validStatuses.includes(status as ResponsibilityStatus)) {
+    return NextResponse.json(
+      { error: `Invalid status '${status}'. Must be one of: ${validStatuses.join(", ")}.` },
+      { status: 400 },
+    );
+  }
+
+  let supabase: ReturnType<typeof getSupabaseAdmin>;
+  try {
+    supabase = getSupabaseAdmin();
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Supabase config error." },
+      { status: 500 },
+    );
+  }
+
+  const { error } = await supabase
+    .from("responsibilities")
+    .update({ status })
+    .eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
+}

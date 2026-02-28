@@ -8,6 +8,8 @@ import { type Task } from "./ResponsibilityTable";
 type ResponsibilityDetailPanelProps = {
     task: Task;
     onClose: () => void;
+    onMarkComplete?: () => void;
+    onMarkIncomplete?: () => void;
 };
 
 const TABS = [
@@ -28,6 +30,8 @@ function formatTimestamp(date: string) {
 export default function ResponsibilityDetailPanel({
     task,
     onClose,
+    onMarkComplete,
+    onMarkIncomplete,
 }: ResponsibilityDetailPanelProps) {
     const [activeTab, setActiveTab] = useState("details");
 
@@ -45,6 +49,23 @@ export default function ResponsibilityDetailPanel({
             <h2 className="text-xl font-semibold mt-4 mb-6 text-gray-900">
                 {task.title}
             </h2>
+
+            {onMarkComplete && task.status !== "Completed" && (
+                <button
+                    onClick={onMarkComplete}
+                    className="w-full mb-2 py-2 px-4 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition"
+                >
+                    ✓ Mark as Completed
+                </button>
+            )}
+            {onMarkIncomplete && task.status === "Completed" && (
+                <button
+                    onClick={onMarkIncomplete}
+                    className="w-full mb-2 py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition"
+                >
+                    ↩ Mark as Open
+                </button>
+            )}
 
             <div className="border-b mb-6" />
 

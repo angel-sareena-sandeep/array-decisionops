@@ -12,6 +12,7 @@ import { ResponsibilityItem } from "@/lib/contracts";
 function apiToTask(item: ResponsibilityItem, idx: number): Task {
   return {
     id: idx,
+    rawId: item.id,
     title: item.title,
     owner: item.owner,
     due: item.due ?? "",
@@ -20,6 +21,15 @@ function apiToTask(item: ResponsibilityItem, idx: number): Task {
     description: item.description ?? "",
     timestamp: item.timestamp,
   };
+}
+
+function getDisplayStatus(task: Task): string {
+  if (task.status === "Open" && task.due) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (new Date(task.due) < today) return "Overdue";
+  }
+  return task.status;
 }
 
 export default function ResponsibilitiesPage() {
@@ -37,6 +47,28 @@ export default function ResponsibilitiesPage() {
     const items: ResponsibilityItem[] = await res.json();
     setAllTasks(items.map(apiToTask));
   }, []);
+
+  const handleMarkComplete = useCallback(async (task: Task) => {
+    const res = await fetch("/api/responsibilities", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: task.rawId, status: "Completed" }),
+    });
+    if (!res.ok) return;
+    await loadTasks();
+    setSelectedTask(null);
+  }, [loadTasks]);
+
+  const handleMarkIncomplete = useCallback(async (task: Task) => {
+    const res = await fetch("/api/responsibilities", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: task.rawId, status: "Open" }),
+    });
+    if (!res.ok) return;
+    await loadTasks();
+    setSelectedTask(null);
+  }, [loadTasks]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -85,27 +117,33 @@ export default function ResponsibilitiesPage() {
     },
   ];
 
-  const filteredTasks = allTasks.filter((task) => {
-    const matchesSearch = task.title
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesStatus =
-      statusFilter === "All" || task.status === statusFilter;
-    const matchesOwner = ownerFilter === "All" || task.owner === ownerFilter;
-    return matchesSearch && matchesStatus && matchesOwner;
-  });
+  const filteredTasks = allTasks
+    .filter((task) => {
+      const matchesSearch = task.title
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+      const matchesStatus =
+        statusFilter === "All" || getDisplayStatus(task) === statusFilter;
+      const matchesOwner = ownerFilter === "All" || task.owner === ownerFilter;
+      return matchesSearch && matchesStatus && matchesOwner;
+    })
+    .map((task) => ({ ...task, status: getDisplayStatus(task) }));
 
-  const openCount = allTasks.filter((t) => t.status === "Open").length;
+  const openCount = allTasks.filter(
+    (t) => t.status !== "Completed" && getDisplayStatus(t) !== "Overdue",
+  ).length;
   const completedCount = allTasks.filter(
     (t) => t.status === "Completed",
   ).length;
-  const overdueCount = allTasks.filter((t) => t.status === "Overdue").length;
+  const overdueCount = allTasks.filter(
+    (t) => t.status !== "Completed" && getDisplayStatus(t) === "Overdue",
+  ).length;
 
   const statCards = [
+    { title: "Total Responsibilities", value: String(allTasks.length) },
     { title: "Open Responsibilities", value: String(openCount) },
     { title: "Completed", value: String(completedCount) },
     { title: "Overdue", value: String(overdueCount) },
-    { title: "Added Since Last Import", value: String(allTasks.length) },
   ];
 
   return (
@@ -134,6 +172,8 @@ export default function ResponsibilitiesPage() {
         <ResponsibilityDetailPanel
           task={selectedTask}
           onClose={() => setSelectedTask(null)}
+          onMarkComplete={() => handleMarkComplete(selectedTask)}
+          onMarkIncomplete={() => handleMarkIncomplete(selectedTask)}
         />
       )}
     </div>
