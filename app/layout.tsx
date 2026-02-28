@@ -16,8 +16,11 @@ export const metadata: Metadata = {
   title: "ARRAY",
   description: "From chat noise to traceable decisions",
   icons: {
-    icon: "/cube.ico",
-    shortcut: "/cube.ico",
+    icon: [
+      { url: "/cube.svg", type: "image/svg+xml" },
+      { url: "/cube.ico", type: "image/x-icon" },
+    ],
+    shortcut: "/cube.svg",
   },
 };
 

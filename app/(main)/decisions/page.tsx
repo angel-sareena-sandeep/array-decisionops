@@ -18,6 +18,7 @@ function apiToDecision(item: DecisionItem, idx: number): Decision {
     lastUpdated: item.lastUpdated,
     explanation: item.explanation,
     timestamp: item.timestamp,
+    evidence: item.evidence,
   };
 }
 
@@ -103,7 +104,7 @@ export default function DecisionsPage() {
   return (
     <div className="flex gap-8">
       <div className="flex-1">
-        <h1 className="text-3xl font-bold mb-8 text-gray-900">Decisions</h1>
+        <h1 className="text-3xl font-bold mb-8 text-white border-l-4 border-[#56E1E9] pl-4">Decisions</h1>
         <FilterBar filters={filters} />
         <DecisionTable
           decisions={filteredDecisions}

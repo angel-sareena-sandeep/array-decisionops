@@ -14,12 +14,12 @@ export default function Sidebar() {
     const pathname = usePathname();
 
     return (
-        <aside className="w-64 bg-white border-r p-6 flex flex-col">
+        <aside className="w-64 bg-[#112C70] rounded-3xl p-6 flex flex-col h-full overflow-y-auto shadow-[0_8px_40px_rgba(10,35,83,0.8)]">
             <div className="mb-8">
                 <Link href="/home" className="flex items-center">
                     {/* Mobile: cube only */}
                     <Image
-                        src="/cube.png"
+                        src="/cube.svg"
                         alt="ARRAY"
                         width={36}
                         height={36}
@@ -36,7 +36,7 @@ export default function Sidebar() {
                         priority
                     />
                 </Link>
-                <p className="text-sm font-medium text-gray-500 mt-2">
+                <p className="text-sm font-medium text-[#56E1E9]/60 mt-4">
                     From chat noise to traceable decisions
                 </p>
             </div>
@@ -49,8 +49,8 @@ export default function Sidebar() {
                             key={href}
                             href={href}
                             className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isActive
-                                    ? "bg-blue-50 text-blue-700 border-l-4 border-blue-600 pl-2"
-                                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
+                                    ? "bg-[#5B58EB] text-white border-l-4 border-[#00C896] pl-2"
+                                    : "text-white/60 hover:bg-[#5B58EB]/30 hover:text-white"
                                 }`}
                         >
                             {label}

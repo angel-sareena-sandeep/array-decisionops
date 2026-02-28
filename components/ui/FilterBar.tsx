@@ -22,11 +22,11 @@ type FilterBarProps = {
 
 export default function FilterBar({ filters }: FilterBarProps) {
     return (
-        <div className="bg-gray-100 p-6 rounded-xl border border-gray-300 shadow-md mb-6">
+        <div className="bg-[#112C70] p-6 rounded-xl border border-[#5B58EB]/30 shadow-[0_4px_20px_rgba(10,35,83,0.5)] mb-6">
             <div className="flex flex-wrap gap-8 items-end">
                 {filters.map((filter, index) => (
                     <div key={index} className="flex flex-col">
-                        <label className="text-xs font-semibold text-gray-600 mb-2">
+                        <label className="text-xs font-semibold text-white/50 uppercase tracking-wide mb-2">
                             {filter.label}
                         </label>
 
@@ -36,17 +36,17 @@ export default function FilterBar({ filters }: FilterBarProps) {
                                 placeholder={filter.placeholder}
                                 value={filter.value}
                                 onChange={(e) => filter.onChange(e.target.value)}
-                                className="border border-gray-300 rounded-lg px-4 py-2 text-sm w-64
-                           bg-white text-gray-900 placeholder-gray-400
-                           focus:outline-none focus:ring-2 focus:ring-blue-600"
+                                className="border border-[#5B58EB]/60 rounded-lg px-4 py-2 text-sm w-64
+                           bg-[#0A2353]/80 text-white placeholder-white/30
+                           focus:outline-none focus:ring-2 focus:ring-[#56E1E9]"
                             />
                         ) : (
                             <select
                                 value={filter.value}
                                 onChange={(e) => filter.onChange(e.target.value)}
-                                className="border border-gray-400 rounded-lg px-4 py-2 text-sm
-                           bg-white text-gray-900
-                           focus:outline-none focus:ring-2 focus:ring-blue-600
+                                className="border border-[#5B58EB]/60 rounded-lg px-4 py-2 text-sm
+                           bg-[#0A2353]/80 text-white
+                           focus:outline-none focus:ring-2 focus:ring-[#56E1E9]
                            cursor-pointer"
                             >
                                 {filter.options.map((opt) => (

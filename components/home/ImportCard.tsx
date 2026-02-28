@@ -171,7 +171,7 @@ export default function ImportCard() {
   }
 
   return (
-    <div className="col-span-2 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-8 shadow-sm">
+    <div className="col-span-2 bg-[#112C70] rounded-xl border border-[#5B58EB]/30 p-8 shadow-[0_8px_30px_rgba(10,35,83,0.6)]">
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -185,18 +185,18 @@ export default function ImportCard() {
       <button
         type="button"
         onClick={handleDropZoneClick}
-        className="w-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-10 text-center hover:border-blue-400 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        className="w-full border-2 border-dashed border-[#5B58EB]/60 rounded-lg p-10 text-center hover:border-[#56E1E9] transition-colors focus:outline-none focus:ring-2 focus:ring-[#56E1E9] focus:ring-offset-2 focus:ring-offset-[#112C70]"
       >
         {selectedFile ? (
-          <p className="text-blue-600 dark:text-blue-400 font-medium truncate">
+          <p className="text-[#56E1E9] font-medium truncate">
             {selectedFile.name}
           </p>
         ) : (
           <>
-            <p className="text-gray-600 dark:text-gray-300 font-medium">
+            <p className="text-white/70 font-medium">
               Click to select a WhatsApp export (.txt)
             </p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+            <p className="text-sm text-white/30 mt-1">
               Only .txt files are accepted
             </p>
           </>
@@ -208,8 +208,8 @@ export default function ImportCard() {
         <p
           className={`mt-3 text-sm font-medium ${
             status === "success"
-              ? "text-green-600 dark:text-green-400"
-              : "text-red-600 dark:text-red-400"
+              ? "text-[#56E1E9]"
+              : "text-red-400"
           }`}
         >
           {message}
@@ -218,22 +218,22 @@ export default function ImportCard() {
 
       {/* Clear confirmation prompt */}
       {confirmClear && (
-        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center justify-between gap-3">
-          <p className="text-sm text-red-700 font-medium">
+        <div className="mt-4 p-3 bg-red-900/30 border border-red-400/40 rounded-lg flex items-center justify-between gap-3">
+          <p className="text-sm text-red-300 font-medium">
             Delete all chat data?
           </p>
           <div className="flex gap-2">
             <button
               type="button"
               onClick={handleClear}
-              className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition"
+              className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition font-medium"
             >
               Yes, delete
             </button>
             <button
               type="button"
               onClick={() => setConfirmClear(false)}
-              className="px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded hover:bg-gray-300 transition"
+              className="px-3 py-1 bg-white/10 text-white/70 text-sm rounded hover:bg-white/20 transition"
             >
               Cancel
             </button>
@@ -247,7 +247,7 @@ export default function ImportCard() {
           type="button"
           onClick={handleSubmit}
           disabled={!selectedFile || status === "loading"}
-          className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex-1 bg-[#5B58EB] text-white py-3 rounded-lg font-medium hover:bg-[#5B58EB]/80 transition disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {status === "loading" ? "Importing…" : "Import & Sync"}
         </button>
@@ -256,7 +256,7 @@ export default function ImportCard() {
             type="button"
             onClick={handleEnrich}
             disabled={enrichStatus === "loading"}
-            className="px-4 py-3 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg font-medium hover:bg-purple-100 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-700"
+            className="px-4 py-3 bg-[#BB63FF]/20 text-[#BB63FF] border border-[#BB63FF]/40 rounded-lg font-medium hover:bg-[#BB63FF]/30 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
           >
             {enrichStatus === "loading" ? "Enriching…" : "✨ Run AI Enrichment"}
           </button>
@@ -266,7 +266,7 @@ export default function ImportCard() {
             type="button"
             onClick={() => setConfirmClear(true)}
             disabled={clearStatus === "loading"}
-            className="px-4 py-3 bg-red-50 text-red-600 border border-red-200 rounded-lg font-medium hover:bg-red-100 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+            className="px-4 py-3 bg-red-900/20 text-red-400 border border-red-400/30 rounded-lg font-medium hover:bg-red-900/30 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
           >
             {clearStatus === "loading" ? "Clearing…" : "Clear Data"}
           </button>
@@ -278,8 +278,8 @@ export default function ImportCard() {
         <p
           className={`mt-3 text-sm font-medium ${
             enrichStatus === "done"
-              ? "text-purple-600 dark:text-purple-400"
-              : "text-red-600 dark:text-red-400"
+              ? "text-[#BB63FF]"
+              : "text-red-400"
           }`}
         >
           {enrichMessage}

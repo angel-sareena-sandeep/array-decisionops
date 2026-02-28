@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { DecisionItem, DecisionStatus } from "@/lib/contracts";
+import { DecisionItem, DecisionStatus, EvidenceMessage } from "@/lib/contracts";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -145,6 +145,68 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
     // ── Pagination ──────────────────────────────────────────────────────────────
     items = items.slice(offset, offset + limit);
+
+    // ── Fetch evidence messages for the returned decisions ────────────────────
+    const decisionIds = items.map((d) => d.id);
+    const evidenceByDecId: Record<string, EvidenceMessage[]> = {};
+    if (decisionIds.length > 0) {
+      const { data: evRows } = await supabase
+        .from("decision_evidence")
+        .select("decision_id, message_id")
+        .in("decision_id", decisionIds);
+
+      if (evRows && evRows.length > 0) {
+        const msgIds = [
+          ...new Set(
+            (evRows as { decision_id: string; message_id: string }[]).map(
+              (r) => r.message_id,
+            ),
+          ),
+        ];
+        const { data: msgRows } = await supabase
+          .from("messages")
+          .select("id, text, sender, msg_ts")
+          .in("id", msgIds);
+
+        const msgById: Record<
+          string,
+          { text: string; sender: string; msg_ts: string }
+        > = {};
+        if (msgRows) {
+          for (const m of msgRows as {
+            id: string;
+            text: string;
+            sender: string;
+            msg_ts: string;
+          }[]) {
+            msgById[m.id] = m;
+          }
+        }
+
+        for (const ev of evRows as {
+          decision_id: string;
+          message_id: string;
+        }[]) {
+          const msg = msgById[ev.message_id];
+          if (!msg) continue;
+          if (!evidenceByDecId[ev.decision_id])
+            evidenceByDecId[ev.decision_id] = [];
+          evidenceByDecId[ev.decision_id].push({
+            text: msg.text,
+            sender: msg.sender,
+            timestamp: msg.msg_ts,
+          });
+        }
+      }
+    }
+
+    // Attach evidence sorted chronologically
+    items = items.map((d) => ({
+      ...d,
+      evidence: (evidenceByDecId[d.id] ?? []).sort((a, b) =>
+        a.timestamp.localeCompare(b.timestamp),
+      ),
+    }));
 
     return NextResponse.json(items);
   } catch (err: unknown) {

@@ -20,6 +20,7 @@ function apiToTask(item: ResponsibilityItem, idx: number): Task {
     evidenceCount: item.evidenceCount ?? 0,
     description: item.description ?? "",
     timestamp: item.timestamp,
+    evidence: item.evidence,
   };
 }
 
@@ -48,27 +49,33 @@ export default function ResponsibilitiesPage() {
     setAllTasks(items.map(apiToTask));
   }, []);
 
-  const handleMarkComplete = useCallback(async (task: Task) => {
-    const res = await fetch("/api/responsibilities", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: task.rawId, status: "Completed" }),
-    });
-    if (!res.ok) return;
-    await loadTasks();
-    setSelectedTask(null);
-  }, [loadTasks]);
+  const handleMarkComplete = useCallback(
+    async (task: Task) => {
+      const res = await fetch("/api/responsibilities", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: task.rawId, status: "Completed" }),
+      });
+      if (!res.ok) return;
+      await loadTasks();
+      setSelectedTask(null);
+    },
+    [loadTasks],
+  );
 
-  const handleMarkIncomplete = useCallback(async (task: Task) => {
-    const res = await fetch("/api/responsibilities", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: task.rawId, status: "Open" }),
-    });
-    if (!res.ok) return;
-    await loadTasks();
-    setSelectedTask(null);
-  }, [loadTasks]);
+  const handleMarkIncomplete = useCallback(
+    async (task: Task) => {
+      const res = await fetch("/api/responsibilities", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: task.rawId, status: "Open" }),
+      });
+      if (!res.ok) return;
+      await loadTasks();
+      setSelectedTask(null);
+    },
+    [loadTasks],
+  );
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -149,7 +156,7 @@ export default function ResponsibilitiesPage() {
   return (
     <div className="flex gap-8">
       <div className="flex-1">
-        <h1 className="text-3xl font-bold mb-8 text-gray-900">
+        <h1 className="text-3xl font-bold mb-8 text-white border-l-4 border-[#56E1E9] pl-4">
           Responsibilities
         </h1>
 

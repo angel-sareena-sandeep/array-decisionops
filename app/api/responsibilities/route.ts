@@ -5,7 +5,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
-import { ResponsibilityItem, ResponsibilityStatus } from "@/lib/contracts";
+import {
+  ResponsibilityItem,
+  ResponsibilityStatus,
+  EvidenceMessage,
+} from "@/lib/contracts";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const params = req.nextUrl.searchParams;
@@ -71,33 +75,48 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     .map((r) => r.source_message_id)
     .filter((id): id is string => id !== null);
 
-  const msgTsById: Record<string, string> = {};
+  const msgById: Record<
+    string,
+    { msg_ts: string; text: string; sender: string }
+  > = {};
   if (sourceIds.length > 0) {
     const { data: msgRows } = await supabase
       .from("messages")
-      .select("id, msg_ts")
+      .select("id, msg_ts, text, sender")
       .in("id", sourceIds);
 
     if (msgRows) {
-      for (const m of msgRows as { id: string; msg_ts: string }[]) {
-        msgTsById[m.id] = m.msg_ts;
+      for (const m of msgRows as {
+        id: string;
+        msg_ts: string;
+        text: string;
+        sender: string;
+      }[]) {
+        msgById[m.id] = m;
       }
     }
   }
 
   // ── Map DB -> ResponsibilityItem ────────────────────────────────────────────
-  let items: ResponsibilityItem[] = respRows.map((row) => ({
-    id: row.id,
-    title: row.task_text,
-    description: "",
-    owner: row.owner,
-    due: row.due_date ?? "",
-    status: row.status as ResponsibilityStatus,
-    timestamp: row.source_message_id
-      ? (msgTsById[row.source_message_id] ?? row.created_at)
-      : row.created_at,
-    evidenceCount: row.source_message_id ? 1 : 0,
-  }));
+  let items: ResponsibilityItem[] = respRows.map((row) => {
+    const srcMsg = row.source_message_id
+      ? msgById[row.source_message_id]
+      : null;
+    const evidence: EvidenceMessage[] = srcMsg
+      ? [{ text: srcMsg.text, sender: row.owner, timestamp: srcMsg.msg_ts }]
+      : [];
+    return {
+      id: row.id,
+      title: row.task_text,
+      description: "",
+      owner: row.owner,
+      due: row.due_date ?? "",
+      status: row.status as ResponsibilityStatus,
+      timestamp: srcMsg ? srcMsg.msg_ts : row.created_at,
+      evidenceCount: srcMsg ? 1 : 0,
+      evidence,
+    };
+  });
 
   // ── Apply in-code filters ───────────────────────────────────────────────────
   if (q) {
@@ -135,10 +154,16 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const validStatuses: ResponsibilityStatus[] = ["Open", "Completed", "Overdue"];
+  const validStatuses: ResponsibilityStatus[] = [
+    "Open",
+    "Completed",
+    "Overdue",
+  ];
   if (!validStatuses.includes(status as ResponsibilityStatus)) {
     return NextResponse.json(
-      { error: `Invalid status '${status}'. Must be one of: ${validStatuses.join(", ")}.` },
+      {
+        error: `Invalid status '${status}'. Must be one of: ${validStatuses.join(", ")}.`,
+      },
       { status: 400 },
     );
   }

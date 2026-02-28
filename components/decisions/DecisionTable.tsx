@@ -2,6 +2,7 @@
 
 import StatusBadge from "@/components/ui/StatusBadge";
 import ConfidenceBar from "@/components/ui/ConfidenceBar";
+import { type EvidenceMessage } from "@/lib/contracts";
 
 export type Decision = {
   id: number;
@@ -12,6 +13,7 @@ export type Decision = {
   lastUpdated: string;
   explanation: string;
   timestamp: string;
+  evidence?: EvidenceMessage[];
 };
 
 type DecisionTableProps = {
@@ -26,9 +28,9 @@ export default function DecisionTable({
   onSelect,
 }: DecisionTableProps) {
   return (
-    <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
-      <table className="w-full text-left text-gray-800">
-        <thead className="bg-gray-100 text-gray-600 text-sm uppercase">
+    <div className="bg-[#112C70] rounded-xl border border-[#5B58EB]/30 shadow-[0_8px_30px_rgba(10,35,83,0.6)] overflow-hidden">
+      <table className="w-full text-left text-white/90">
+        <thead className="bg-[#5B58EB] text-white text-sm uppercase">
           <tr>
             <th className="p-4">Decision</th>
             <th className="p-4">Ver.</th>
@@ -43,9 +45,9 @@ export default function DecisionTable({
                 <tr
                   key={decision.id}
                   onClick={() => onSelect(decision)}
-                  className={`border-t cursor-pointer hover:bg-gray-50 transition ${
+                  className={`border-t border-[#5B58EB]/30 cursor-pointer hover:bg-[#5B58EB]/20 transition ${
                     selectedId === decision.id
-                      ? "bg-blue-50 border-l-4 border-blue-500"
+                      ? "bg-[#00C896]/10 border-l-4 border-[#00C896]"
                       : ""
                   }`}
                 >
@@ -70,21 +72,21 @@ export default function DecisionTable({
               ))
             : // Render placeholder empty rows so layout stays consistent
               Array.from({ length: 5 }).map((_, idx) => (
-                <tr key={`placeholder-${idx}`} className="border-t">
+                <tr key={`placeholder-${idx}`} className="border-t border-[#5B58EB]/30">
                   <td className="p-4 font-medium">
-                    <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
+                    <div className="h-4 bg-white/10 rounded animate-pulse w-3/4" />
                   </td>
                   <td className="p-4">
-                    <div className="h-4 bg-gray-200 rounded animate-pulse w-8" />
+                    <div className="h-4 bg-white/10 rounded animate-pulse w-8" />
                   </td>
                   <td className="p-4">
-                    <div className="h-4 bg-gray-200 rounded animate-pulse w-20" />
+                    <div className="h-4 bg-white/10 rounded animate-pulse w-20" />
                   </td>
                   <td className="p-4 w-40">
-                    <div className="h-4 bg-gray-200 rounded animate-pulse w-full" />
+                    <div className="h-4 bg-white/10 rounded animate-pulse w-full" />
                   </td>
                   <td className="p-4">
-                    <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2" />
+                    <div className="h-4 bg-white/10 rounded animate-pulse w-1/2" />
                   </td>
                 </tr>
               ))}
