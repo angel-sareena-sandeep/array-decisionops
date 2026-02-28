@@ -20,6 +20,10 @@ export default function ImportCard() {
   const [hasChatLoaded, setHasChatLoaded] = useState(false);
   const [clearStatus, setClearStatus] = useState<"idle" | "loading">("idle");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [enrichStatus, setEnrichStatus] = useState<
+    "idle" | "loading" | "done" | "error"
+  >("idle");
+  const [enrichMessage, setEnrichMessage] = useState<string>("");
 
   useEffect(() => {
     setHasChatLoaded(!!localStorage.getItem("decisionops_chat_id"));
@@ -129,6 +133,43 @@ export default function ImportCard() {
     }
   }
 
+  async function handleEnrich() {
+    const chat_id = localStorage.getItem("decisionops_chat_id");
+    if (!chat_id) return;
+
+    setEnrichStatus("loading");
+    setEnrichMessage("");
+
+    try {
+      const res = await fetch("/api/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id }),
+      });
+      const json = await res.json();
+      if (!res.ok)
+        throw new Error(json?.error ?? `Request failed (${res.status})`);
+
+      const providerLabel =
+        json.llm_used === "openrouter"
+          ? "OpenRouter"
+          : json.llm_used === "groq"
+            ? "Groq"
+            : null;
+      setEnrichStatus("done");
+      setEnrichMessage(
+        providerLabel
+          ? `AI enrichment complete via ${providerLabel} (${json.candidate_messages_sent ?? "?"} messages analysed) — ${json.decisions_added ?? 0} new decisions, ${json.responsibilities_added ?? 0} new responsibilities.`
+          : "LLM unavailable — no new items from AI.",
+      );
+    } catch (err: unknown) {
+      setEnrichStatus("error");
+      setEnrichMessage(
+        err instanceof Error ? err.message : "Enrichment failed.",
+      );
+    }
+  }
+
   return (
     <div className="col-span-2 bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-8 shadow-sm">
       {/* Hidden file input */}
@@ -200,7 +241,7 @@ export default function ImportCard() {
         </div>
       )}
 
-      {/* Submit + Clear buttons */}
+      {/* Submit + AI Enrichment + Clear buttons */}
       <div className="mt-6 flex gap-3">
         <button
           type="button"
@@ -213,6 +254,16 @@ export default function ImportCard() {
         {hasChatLoaded && (
           <button
             type="button"
+            onClick={handleEnrich}
+            disabled={enrichStatus === "loading"}
+            className="px-4 py-3 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg font-medium hover:bg-purple-100 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-700"
+          >
+            {enrichStatus === "loading" ? "Enriching…" : "✨ Run AI Enrichment"}
+          </button>
+        )}
+        {hasChatLoaded && (
+          <button
+            type="button"
             onClick={() => setConfirmClear(true)}
             disabled={clearStatus === "loading"}
             className="px-4 py-3 bg-red-50 text-red-600 border border-red-200 rounded-lg font-medium hover:bg-red-100 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
@@ -221,6 +272,19 @@ export default function ImportCard() {
           </button>
         )}
       </div>
+
+      {/* AI enrichment result */}
+      {enrichMessage && (
+        <p
+          className={`mt-3 text-sm font-medium ${
+            enrichStatus === "done"
+              ? "text-purple-600 dark:text-purple-400"
+              : "text-red-600 dark:text-red-400"
+          }`}
+        >
+          {enrichMessage}
+        </p>
+      )}
     </div>
   );
 }

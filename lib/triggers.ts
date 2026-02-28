@@ -28,14 +28,35 @@ export const DECISION_FINAL_TRIGGERS: string[] = [
   "we have decided",
   "decision made",
   "decision is",
+  "decided on",
+  "decision:",
+  "verdict:",
   "confirmed:",
   "confirmed.",
+  "confirmed,",
+  "it's confirmed",
+  "ok confirmed",
   // Agreement & approval
   "approved",
   "we approved",
   "all agreed",
   "everyone agreed",
   "we all agreed",
+  // Locked / finalized
+  "locked in",
+  "lock it in",
+  "finalized",
+  "finalised",
+  "we finalized",
+  "we finalised",
+  // Settlement
+  "that's settled",
+  "settled then",
+  "settled.",
+  "we're set",
+  "it's a deal",
+  "deal.",
+  "deal!",
   // Selection locked in
   "go ahead with",
   "going ahead with",
@@ -47,9 +68,12 @@ export const DECISION_FINAL_TRIGGERS: string[] = [
   "we will use",
   "we're using",
   "we are using",
+  "we're doing",
   // Conclusive
   "that's final",
   "that is final",
+  "that's the one",
+  "that's the plan",
   "so it's",
   "done, we",
   "ok, decided",
@@ -81,6 +105,35 @@ export const DECISION_TENTATIVE_TRIGGERS: string[] = [
   "we should go with",
   "we could go with",
   "maybe we go with",
+  "we should do",
+  "we should use",
+  // Preference & voting
+  "i'd go with",
+  "i'd say",
+  "i'd suggest",
+  "my vote is",
+  "i vote for",
+  // Direction
+  "we go for",
+  "let's go for",
+  "going for",
+  "thinking we",
+  "thinking of going",
+  // Keeping / sticking
+  "let's keep",
+  "we'll keep",
+  "sticking with",
+  "let's stick with",
+  // Picking / choosing
+  "let's pick",
+  "we pick",
+  "let's choose",
+  "we choose",
+  // Planning
+  "plan to",
+  "we plan to",
+  "planning to",
+  "we're planning",
   // Soft agreement
   "sounds like a plan",
   "sounds good, let's",
@@ -111,6 +164,17 @@ export const DECISION_TENTATIVE_TRIGGERS: string[] = [
  */
 export const OPTION_SELECT_RE = /\boption\s+[a-z]\b/i;
 
+/**
+ * Short standalone messages that are pure finality/agreement with no other content.
+ * Extremely common in WhatsApp: "Deal!", "Sorted", "Done ✓", etc.
+ * Using a regex instead of phrases prevents matching substrings like "big deal" or "no deal".
+ *
+ * Examples that match:  "Deal!", "Sorted.", "Agreed", "Done ✓", "Perfect!"
+ * Examples that do NOT: "big deal", "no deal", "done, we decided" (too long)
+ */
+export const DECISION_STANDALONE_RE =
+  /^(deal|done|sorted|agreed|confirmed|perfect|sealed|set|settled)[!\s.✓✅]*$/i;
+
 // ─── Responsibility triggers ───────────────────────────────────────────────────
 
 /**
@@ -118,7 +182,8 @@ export const OPTION_SELECT_RE = /\boption\s+[a-z]\b/i;
  * Tested against the original (non-lowercased) message text.
  * Examples: "I will send the report", "I'll handle this", "I'm going to sort this"
  */
-export const RESP_SELF_RE = /\b(i will|i'll|i'm going to|i am going to|i can do|i'll take)\b/i;
+export const RESP_SELF_RE =
+  /\b(i will|i'll|i'm going to|i am going to|i can do|i'll take|let me|i'll do|i'll sort|i got it|i got this|i'll take care|leave it to me)\b/i;
 
 /**
  * Matches delegation to another participant.
@@ -176,7 +241,17 @@ export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
   "i will sort",
   "i will get",
   "i will make",
+  // Informal acknowledgements
+  "i got it",
+  "i got this",
+  "leave it to me",
+  "no worries, i'll",
+  "sure thing, i'll",
   // Ownership & assignment
+  "i'll manage",
+  "i'll take it",
+  "i'll be handling",
+  "you're responsible",
   "follow up with",
   "responsible for",
   "assigned to",
@@ -192,6 +267,10 @@ export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
   "ok i'll",
   "alright i will",
   "alright i'll",
+  // Needs-doing phrases
+  "needs to be done",
+  "has to be done",
+  "needs to be submitted",
   // Due + deadline variants
   "need to be done by",
   "must be done by",
@@ -207,3 +286,19 @@ export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
 export const RESP_DEADLINE_RE = /\bdeadline\b/i;
 export const RESP_DEADLINE_ACTION_RE =
   /\b(by|before|until|submit|send|complete|finish|deliver)\b/i;
+
+/**
+ * Fires when a message contains a specific date/day reference.
+ * Must be paired with RESP_DATE_ACTION_RE to avoid flagging pure calendar chat.
+ *
+ * Examples that match (with action):  "Submit by Friday", "Done by 5pm tomorrow"
+ * Examples that do NOT match alone:   "meeting on Monday" (no action word)
+ */
+export const RESP_DATE_RE =
+  /\b(by|before|until|on)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|tonight|next\s+week|end\s+of\s+(day|week|month)|eod|eow|\d{1,2}[\/\-]\d{1,2}|\d{1,2}(?:st|nd|rd|th))\b/i;
+
+/**
+ * Action words that must co-occur with RESP_DATE_RE to confirm a responsibility.
+ */
+export const RESP_DATE_ACTION_RE =
+  /\b(send|submit|finish|complete|deliver|prepare|share|upload|book|confirm|review|fix|write|get|do|make|handle|check|call|meet|present)\b/i;

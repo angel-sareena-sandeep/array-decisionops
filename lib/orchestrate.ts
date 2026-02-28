@@ -25,6 +25,8 @@ import {
   persistDecisions,
   persistResponsibilities,
 } from "./decisionEngine";
+import { runLLMOnMessages } from "./llm";
+import { mergeDecisions, mergeResponsibilities } from "./llmMerge";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -91,20 +93,7 @@ export async function runAnalysisPipeline(args: {
   const decisionsResult = extractDecisions(messages);
   const responsibilitiesResult = extractResponsibilities(messages);
 
-  // ── Step 3: Future LLM enrichment slot ───────────────────────────────────
-  // Insert an optional LLM candidate extraction pass here when ready.
-  // The LLM pass should produce additional DecisionItem[] / ResponsibilityItem[]
-  // arrays that can be merged with decisionsResult.items / responsibilitiesResult.items
-  // before the persistence calls below.  The persistence functions are
-  // deterministic and idempotent regardless of input source.
-  //
-  // Example (do NOT uncomment — not implemented):
-  //   const llmDecisions = await llmExtractDecisions(messages);
-  //   const mergedDecisions = mergeByTitle(decisionsResult.items, llmDecisions);
-  //
-  // For now: pass extraction results directly to persistence.
-
-  // ── Step 4: Persist decisions (idempotent via thread_key + version_no) ───
+  // ── Step 3: Persist decisions (idempotent via thread_key + version_no) ───
   const decPersist = await persistDecisions({
     supabase: supabase as unknown,
     chat_id,
@@ -127,6 +116,96 @@ export async function runAnalysisPipeline(args: {
     decisions_new: decPersist.decisions_inserted,
     responsibilities_detected: responsibilitiesResult.items.length,
     responsibilities_new: respPersist.inserted,
+  };
+}
+
+// ─── On-demand LLM enrichment ────────────────────────────────────────────────
+
+export type EnrichResult = {
+  messages_analysed: number;
+  candidate_messages_sent: number;
+  decisions_added: number;
+  responsibilities_added: number;
+  llm_used: "openrouter" | "groq" | "deterministic";
+};
+
+/**
+ * Returns the subset of messages the deterministic engine flagged as evidence,
+ * plus CONTEXT_WINDOW neighbours on each side, sorted chronologically.
+ *
+ * Sending only candidates to the LLM keeps the prompt well under free-tier
+ * TPM limits (~3-4K tokens instead of ~19K for a 250-message chat).
+ *
+ * Falls back to ALL messages when fewer than MIN_CANDIDATES are found
+ * (e.g. a chat with almost no decision language — LLM should see everything).
+ */
+
+/**
+ * On-demand LLM enrichment for a chat that has already been imported.
+ * Re-runs deterministic extraction as a merge baseline, runs the LLM
+ * (Gemini → Groq → deterministic), and persists any net-new items.
+ * Safe to call multiple times — persistence is idempotent.
+ */
+export async function runEnrichment(args: {
+  supabase: SupabaseClient;
+  chat_id: string;
+}): Promise<EnrichResult> {
+  const { supabase, chat_id } = args;
+
+  const messages = await fetchChatMessages(supabase, chat_id);
+  if (messages.length === 0) {
+    return {
+      messages_analysed: 0,
+      candidate_messages_sent: 0,
+      decisions_added: 0,
+      responsibilities_added: 0,
+      llm_used: "deterministic",
+    };
+  }
+
+  // Deterministic baseline (needed by merge functions)
+  const decisionsBase = extractDecisions(messages);
+  const responsibilitiesBase = extractResponsibilities(messages);
+  let decisionsResult = decisionsBase;
+  let responsibilitiesResult = responsibilitiesBase;
+  let llm_used: EnrichResult["llm_used"] = "deterministic";
+
+  console.log(`enrich: sending all ${messages.length} messages to LLM`);
+
+  // LLM pass — let the error bubble up so the route can return 500
+  const llmOutput = await runLLMOnMessages(messages);
+  if (
+    llmOutput.provider !== null &&
+    (llmOutput.decisions.length > 0 || llmOutput.responsibilities.length > 0)
+  ) {
+    decisionsResult = mergeDecisions(decisionsBase, llmOutput.decisions);
+    responsibilitiesResult = mergeResponsibilities(
+      responsibilitiesBase,
+      llmOutput.responsibilities,
+    );
+    llm_used = llmOutput.provider;
+  }
+
+  const decPersist = await persistDecisions({
+    supabase: supabase as unknown,
+    chat_id,
+    decisions: decisionsResult.items,
+    evidenceByDecisionId: decisionsResult.evidenceByDecisionId,
+  });
+  const respPersist = await persistResponsibilities({
+    supabase: supabase as unknown,
+    chat_id,
+    responsibilities: responsibilitiesResult.items,
+    evidenceByResponsibilityId:
+      responsibilitiesResult.evidenceByResponsibilityId,
+  });
+
+  return {
+    messages_analysed: messages.length,
+    candidate_messages_sent: messages.length,
+    decisions_added: decPersist.decisions_inserted,
+    responsibilities_added: respPersist.inserted,
+    llm_used,
   };
 }
 

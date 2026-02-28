@@ -25,6 +25,8 @@ import {
   RESP_GENERAL_TRIGGER_PHRASES,
   RESP_DEADLINE_RE,
   RESP_DEADLINE_ACTION_RE,
+  RESP_DATE_RE,
+  RESP_DATE_ACTION_RE,
 } from "./triggers";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -88,6 +90,9 @@ function detectDecisionStatus(lower: string): DecisionStatus | null {
     if (lower.includes(trigger)) return "Tentative";
   }
   if (OPTION_SELECT_RE.test(lower)) return "Tentative";
+  // NOTE: DECISION_STANDALONE_RE ("agreed", "done", "sorted", etc.) intentionally
+  // removed — bare reactions produce junk decisions with no substantive content.
+  // They are added as evidence by the LLM enrichment pass instead.
   return null;
 }
 
@@ -150,8 +155,12 @@ function detectResponsibilityTrigger(lower: string, original: string): boolean {
   for (const phrase of RESP_GENERAL_TRIGGER_PHRASES) {
     if (lower.includes(phrase)) return true;
   }
-  // "deadline" only when task-like (contains a task-action word)
+  // "deadline" only when task-like
   if (RESP_DEADLINE_RE.test(lower) && RESP_DEADLINE_ACTION_RE.test(lower)) {
+    return true;
+  }
+  // Date reference + action word: "Submit by Friday", "Done by tomorrow"
+  if (RESP_DATE_RE.test(lower) && RESP_DATE_ACTION_RE.test(lower)) {
     return true;
   }
   return false;
@@ -228,7 +237,10 @@ export async function persistDecisions(args: {
   let evidence_inserted = 0;
 
   for (const dec of decisions) {
-    const thread_key = slugify(dec.title);
+    // Use LLM-assigned thread_key if available, otherwise derive from title
+    const thread_key =
+      (dec as DecisionItem & { thread_key?: string }).thread_key ??
+      slugify(dec.title);
 
     // Find or create thread
     let { data: threadRow } = await db
@@ -363,7 +375,7 @@ export async function persistResponsibilities(args: {
       owner: resp.owner,
       task_text,
       status: resp.status,
-      due_date: null,
+      due_date: resp.due && resp.due.trim() !== "" ? resp.due : null,
       source_message_id,
     });
 
