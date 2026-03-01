@@ -44,11 +44,11 @@ This repository contains the launch version of ARRAY. Scope is fixed and intenti
 
 ## Product Screenshots
 
-![Upload](screenshots/01-upload.png)
-![Decisions](screenshots/02-decisions.png)
-![Responsibilities](screenshots/03-responsibilities.png)
-![Search](screenshots/04-search.png)
-![AI Enrichment](screenshots/05-ai-enrichment.png)
+![Upload](demo/screenshots/01-upload.png)
+![Decisions](demo/screenshots/02-decisions.png)
+![Responsibilities](demo/screenshots/03-responsibilities.png)
+![Search](demo/screenshots/04-search.png)
+![AI Enrichment](demo/screenshots/05-ai-enrichment.png)
 
 ---
 
