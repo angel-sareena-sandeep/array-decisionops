@@ -122,16 +122,31 @@ These files are included so anyone (including judges) can reproduce the MVP quic
 
 ## How to Run
 
-**Prerequisites:** Node.js 18+, a Supabase project with the required schema applied.
+### Local Development
 
-```bash
-npm install
-npm run dev
-```
+Prerequisites:
+- Node.js 18+
+- Supabase project with required schema applied
 
-The application runs at `http://localhost:3000`.
+Install dependencies:
 
-To test ingestion, export a WhatsApp conversation as a `.txt` file and upload it through the import interface. No external connectors, no API keys required for core functionality. LLM enrichment requires a configured provider key in `.env.local`.
+npm install  
+npm run dev  
+
+The application runs locally at:
+http://localhost:3000
+
+Environment variables must be configured in `.env.local`.
+
+---
+
+### Production Deployment
+
+The live deployed version is available at:
+
+https://array-decisionops.vercel.app/home
+
+The production environment uses Vercel environment variables.
 
 ---
 
