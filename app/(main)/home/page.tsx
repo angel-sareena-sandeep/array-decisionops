@@ -49,7 +49,7 @@ export default function HomePage() {
           status: item.status,
           confidence: `${item.confidence}%`,
           lastUpdated: new Date(item.lastUpdated).toLocaleDateString(),
-          evidenceCount: 0,
+          evidenceCount: item.evidence?.length ?? 0,
         })),
       );
     }

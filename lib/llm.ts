@@ -57,99 +57,68 @@ export type LLMOutput = {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an AI assistant that extracts decisions and action items (responsibilities) from WhatsApp group chat messages.
+const SYSTEM_PROMPT = `You extract DECISIONS and RESPONSIBILITIES from WhatsApp group chat messages. Output valid JSON only — no markdown, no prose, no explanation.
 
-You will receive a JSON array of messages. Each message has:
-- hash: unique message identifier (msg_sha256)
-- sender: the person who sent it
-- text: the message content
-- ts: ISO 8601 timestamp
+OUTPUT FORMAT (return this exact structure, no other text):
+{"decisions":[{"thread_key":"snake_case_slug","title":"Complete sentence ≤80 chars","status":"Final|Tentative","confidence":0-100,"explanation":"1-3 sentences ≤300 chars","decided_at":"ISO8601","evidence_hashes":["m000"]}],"responsibilities":[{"title":"Action description ≤80 chars","owner":"Person name or unassigned","due":"YYYY-MM-DD or empty string","description":"1-2 sentences","evidence_hash":"m000"}]}
 
-Return ONLY a valid JSON object — no markdown, no explanation, no code fences. The object must match this exact structure:
+Message IDs: each input message has an "id" field (m000, m001…). Use ONLY these short IDs in evidence_hashes and evidence_hash — never copy any other value.
 
-{
-  "decisions": [
-    {
-      "thread_key": "url_safe_slug_max_64_chars",
-      "title": "Team agreed to use Supabase for the database",
-      "status": "Final",
-      "confidence": 85,
-      "explanation": "After comparing Firebase and Supabase, the team chose Supabase for its Postgres support and free tier. Confirmed by all members on Feb 18.",
-      "decided_at": "2026-02-18T14:30:00.000Z",
-      "evidence_hashes": ["m000", "m003"]
-    }
-  ],
-  "responsibilities": [
-    {
-      "title": "task description max 80 chars",
-      "owner": "Sender Name",
-      "due": "2026-02-23",
-      "description": "1-2 sentence summary of what needs to be done",
-      "evidence_hash": "m001"
-    }
-  ]
-}
+━━━ DECISIONS ━━━
 
-IMPORTANT: Each message in the input has an "id" field like "m000", "m001", etc.
-Use those exact id values in evidence_hashes and evidence_hash. DO NOT use any other value.
+BEFORE extracting, apply this filter: "What specific thing did this group decide?"
+If the answer is a vague word or reaction with no concrete content → SKIP entirely.
+Always skip: single-word replies / bare reactions ("agreed", "ok", "done", "sure", "noted", "👍", "✅") / questions / greetings / status updates with no resolution.
 
-RULES FOR DECISIONS — READ CAREFULLY:
+EXTRACT when a message contains a concrete, specific outcome: a choice made, a deadline set, a person/tool/approach agreed on.
 
-RULE 1 — STANDALONE OUTCOME REQUIRED:
-A decision MUST contain a clear, standalone outcome statement describing WHAT was decided.
-The title must answer "what did the group decide?" in a complete phrase.
-BAD:  "agreed", "confirmed", "done", "ok", "perfect", "sorted", "yes", "👍"
-GOOD: "Backend deployment moved to Feb 18", "Team agreed to use Supabase for the database", "Launch date set for March 1"
+TITLE: complete sentence stating WHAT was decided, max 80 chars.
+  ✗ "Agreed on frontend"  ✓ "Team chose React for the frontend framework"
 
-RULE 2 — DO NOT EXTRACT BARE REACTIONS:
-DO NOT extract acknowledgements, single-word confirmations, or reactions as standalone decisions.
-This includes: "agreed", "ok", "done", "yes", "perfect", "👍", "✅", "sounds good", "sure", "noted".
-If the full decision content is NOT restated in the same message, it is NOT a decision — skip it entirely.
+EXPLANATION: context + outcome + reasoning if visible, max 300 chars.
+  ✗ "Decision based on: agreed"  ✓ "After comparing React and Vue, the team chose React due to prior experience. All three members confirmed."
 
-RULE 3 — CONFIRMATIONS ARE EVIDENCE, NOT NEW DECISIONS:
-If a message is only confirming or reacting to a prior decision in the same input, DO NOT create a new decision for it.
-Instead, add its hash to the evidence_hashes of the original decision it is confirming.
-Example: if message A says "we're going with React" and message B says "agreed 👍", message B is evidence for message A's decision — not its own decision.
+STATUS: Final = definitive language ("we decided / going with / locked in / approved / we will"). Tentative = directional ("let's try / I suggest / we should / thinking of").
 
-RULE 4 — THREAD KEYS GROUP RELATED MESSAGES:
-thread_key: lowercase, letters/numbers/underscores only, max 64 chars.
-All messages about the same topic MUST share the same thread_key (e.g. "api_provider_choice", "launch_date", "frontend_framework").
+CONFIDENCE: 90-100 explicit declaration | 70-89 strong signal | 50-69 moderate | 30-49 weak.
 
-RULE 5 — TITLE AND EXPLANATION QUALITY:
-title: Write a complete, standalone sentence describing WHAT was decided. Max 80 chars.
-  BAD:  "Backend", "Agreed on deployment", "Feb 18"
-  GOOD: "Backend deployment deadline set for Feb 18", "Team will use React for the frontend"
-explanation: Write 1-3 sentences describing the decision context and outcome: what options were considered (if visible), what was chosen, and why (if stated). Max 300 chars.
-  BAD:  "Decision based on: agreed"
-  GOOD: "After discussing React vs Vue, the team chose React due to existing experience. Confirmed by all three members."
+DECIDED_AT: ts of the message that STATES the outcome — not the first reaction to it.
 
-RULE 6 — STATUS AND CONFIDENCE:
-status "Final": language is definitive — "we decided", "going with X", "locked in", "we will use", "approved".
-status "Tentative": language is directional but not locked — "let's try", "thinking of", "proposal", "I suggest", "we should".
-confidence 90–100: explicit declaration. 70–89: strong signal. 50–69: moderate. 30–49: weak signal.
-DO NOT assign confidence above 49 to a bare reaction message even if it seems to confirm something.
+THREAD_KEY: lowercase a-z 0-9 underscore, max 64 chars. Same topic = same thread_key.
 
-RULE 7 — TIMESTAMPS:
-decided_at: use the "ts" of the message that states the actual decision outcome (not the earliest reaction to it).
+DEDUPLICATION — critical:
+One resolved topic = ONE decision object.
+  1. The message that first states the full outcome is the decision (primary evidence).
+  2. Every later message that confirms, restates, or reacts to the same topic → append to evidence_hashes of the primary, NOT a new decision.
+  3. If two messages describe the same outcome, produce ONE object with both ids in evidence_hashes.
 
-RULES FOR RESPONSIBILITIES:
-- Only extract concrete action items assigned to a person or needed by a deadline.
-- owner: the exact sender name if they are committing ("I will", "I'll", "let me"), or the name being addressed ("can you X"). Use "unassigned" only if no person is identifiable.
-- due: parse natural-language dates relative to the message's "ts" field into YYYY-MM-DD. Empty string if no deadline.
-- evidence_hash: the single most relevant message hash.
+Example:
+  m005: "Anika demos, Rohan handles Q&A" → decision, primary
+  m006: "all agreed. Anika demos, Rohan handles technical Q&A" → evidence only, add to m005's evidence_hashes
+  m007: "👍" → evidence only, add to m005's evidence_hashes
+  Correct output: ONE decision, evidence_hashes: ["m005","m006","m007"]
 
-ABSOLUTE DO NOT EXTRACT LIST:
-- Questions without answers
-- Greetings, emoji reactions, or acknowledgements with no content
-- Status updates with no action or decision
-- Casual conversation
-- Any message whose entire text is a single word or emoji that does not restate a full outcome
+━━━ RESPONSIBILITIES ━━━
 
-If there are no decisions or responsibilities, return: {"decisions":[],"responsibilities":[]}`;
+Extract only concrete action items with a clear owner or deadline. Skip vague plans, questions, and anything already completed.
+
+OWNER: exact sender name if self-committing ("I will / I'll / let me / I can"); name of person addressed if delegated ("can you / please + action / you need to"). "unassigned" only if truly no person identifiable.
+
+DUE: convert relative dates ("by Friday", "next Monday", "tomorrow") to YYYY-MM-DD relative to the message ts. Empty string if no deadline.
+
+EVIDENCE_HASH: single id of the message most directly stating the task.
+
+━━━
+
+No results? Return exactly: {"decisions":[],"responsibilities":[]}`;
 
 // ─── Prompt builder ───────────────────────────────────────────────────────────
 
-export type PromptBuild = { prompt: string; idToHash: Record<string, string> };
+export type PromptBuild = {
+  systemPrompt: string;
+  userContent: string;
+  idToHash: Record<string, string>;
+};
 
 export function buildPrompt(chunk: MessageInput[]): PromptBuild {
   const idToHash: Record<string, string> = {};
@@ -159,7 +128,8 @@ export function buildPrompt(chunk: MessageInput[]): PromptBuild {
     return { id, sender: m.sender, text: m.message_text, ts: m.timestamp };
   });
   return {
-    prompt: `${SYSTEM_PROMPT}\n\nMessages:\n${JSON.stringify(msgs)}`,
+    systemPrompt: SYSTEM_PROMPT,
+    userContent: JSON.stringify(msgs),
     idToHash,
   };
 }
@@ -291,7 +261,8 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
 // ─── API callers ──────────────────────────────────────────────────────────────
 
 async function callOpenRouter(
-  prompt: string,
+  systemPrompt: string,
+  userContent: string,
   idToHash: Record<string, string> = {},
 ): Promise<LLMChunkResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -309,7 +280,10 @@ async function callOpenRouter(
     },
     body: JSON.stringify({
       model: "arcee-ai/trinity-large-preview:free",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
       response_format: { type: "json_object" },
       temperature: 0.1,
     }),
@@ -331,7 +305,8 @@ async function callOpenRouter(
 }
 
 async function callGroq(
-  prompt: string,
+  systemPrompt: string,
+  userContent: string,
   idToHash: Record<string, string> = {},
 ): Promise<LLMChunkResult> {
   const apiKey = process.env.GROQ_API_KEY;
@@ -347,7 +322,10 @@ async function callGroq(
     },
     body: JSON.stringify({
       model: "llama-3.3-70b-versatile",
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContent },
+      ],
       response_format: { type: "json_object" },
       temperature: 0.1,
     }),
@@ -376,13 +354,17 @@ async function callGroq(
  * it is added to `failed` and skipped for all remaining chunks.
  */
 async function callWithFallback(
-  prompt: string,
+  systemPrompt: string,
+  userContent: string,
   failed: Set<string>,
   idToHash: Record<string, string> = {},
 ): Promise<{ result: LLMChunkResult; provider: "openrouter" | "groq" } | null> {
   if (!failed.has("openrouter")) {
     try {
-      const result = await withRetry(() => callOpenRouter(prompt, idToHash), 2);
+      const result = await withRetry(
+        () => callOpenRouter(systemPrompt, userContent, idToHash),
+        2,
+      );
       return { result, provider: "openrouter" };
     } catch (err) {
       console.warn(
@@ -395,7 +377,10 @@ async function callWithFallback(
 
   if (!failed.has("groq")) {
     try {
-      const result = await withRetry(() => callGroq(prompt, idToHash), 2);
+      const result = await withRetry(
+        () => callGroq(systemPrompt, userContent, idToHash),
+        2,
+      );
       return { result, provider: "groq" };
     } catch (err) {
       console.warn(
@@ -458,8 +443,13 @@ export async function runLLMOnMessages(
 
     if (i > 0) await sleep(INTER_CHUNK_DELAY_MS);
 
-    const { prompt, idToHash } = buildPrompt(chunks[i]);
-    const outcome = await callWithFallback(prompt, failedProviders, idToHash);
+    const { systemPrompt, userContent, idToHash } = buildPrompt(chunks[i]);
+    const outcome = await callWithFallback(
+      systemPrompt,
+      userContent,
+      failedProviders,
+      idToHash,
+    );
 
     if (!outcome) continue; // both providers failed for this chunk — skip it
 

@@ -27,6 +27,16 @@ import {
 } from "./decisionEngine";
 import { runLLMOnMessages } from "./llm";
 import { mergeDecisions, mergeResponsibilities } from "./llmMerge";
+import { DecisionItem } from "./contracts";
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/[\s-]+/g, "_")
+    .slice(0, 64);
+}
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -186,6 +196,21 @@ export async function runEnrichment(args: {
     llm_used = llmOutput.provider;
   }
 
+  // Compute which thread_keys the enriched result will occupy so we can
+  // clean up stale deterministic threads afterwards.
+  const enrichedThreadKeys = new Set(
+    decisionsResult.items.map(
+      (d) =>
+        (d as DecisionItem & { thread_key?: string }).thread_key ??
+        slugify(d.title),
+    ),
+  );
+
+  // Clear responsibilities before re-inserting (no versioning for them).
+  await clearResponsibilitiesForChat(supabase, chat_id);
+
+  // Persist decisions WITHOUT pre-clearing — version-aware compare runs
+  // against existing DB rows, so v2/v3 are detected correctly.
   const decPersist = await persistDecisions({
     supabase: supabase as unknown,
     chat_id,
@@ -200,6 +225,10 @@ export async function runEnrichment(args: {
       responsibilitiesResult.evidenceByResponsibilityId,
   });
 
+  // Delete stale threads not in the enriched result (removes old deterministic
+  // threads without destroying version history on LLM threads).
+  await deleteStaleThreads(supabase, chat_id, enrichedThreadKeys);
+
   return {
     messages_analysed: messages.length,
     candidate_messages_sent: messages.length,
@@ -209,7 +238,66 @@ export async function runEnrichment(args: {
   };
 }
 
-// ─── DB helpers ──────────────────────────────────────────────────────────────
+/**
+ * Removes threads (+ their decisions + evidence) whose thread_key is NOT in
+ * `keepKeys`. Used after enrichment to discard stale deterministic threads.
+ */
+async function deleteStaleThreads(
+  supabase: SupabaseClient,
+  chat_id: string,
+  keepKeys: Set<string>,
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+
+  const { data: allThreads } = await db
+    .from("decision_threads")
+    .select("id, thread_key")
+    .eq("chat_id", chat_id);
+
+  if (!allThreads || allThreads.length === 0) return;
+
+  const staleIds = (allThreads as { id: string; thread_key: string }[])
+    .filter((t) => !keepKeys.has(t.thread_key))
+    .map((t) => t.id);
+
+  if (staleIds.length === 0) return;
+
+  const { data: staleDecisions } = await db
+    .from("decisions")
+    .select("id")
+    .in("thread_id", staleIds);
+
+  if (staleDecisions && staleDecisions.length > 0) {
+    const decIds = (staleDecisions as { id: string }[]).map((d) => d.id);
+    await db.from("decision_evidence").delete().in("decision_id", decIds);
+    await db.from("decisions").delete().in("thread_id", staleIds);
+  }
+
+  await db.from("decision_threads").delete().in("id", staleIds);
+  console.log(`enrich: deleted ${staleIds.length} stale threads for chat ${chat_id}`);
+}
+
+/**
+ * Deletes all responsibilities for the given chat.
+ * Used by runEnrichment to replace rather than stack.
+ */
+async function clearResponsibilitiesForChat(
+  supabase: SupabaseClient,
+  chat_id: string,
+): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { error, count } = await db
+    .from("responsibilities")
+    .delete()
+    .eq("chat_id", chat_id);
+  if (error) {
+    console.error("enrich: failed to clear responsibilities:", error.message);
+  } else {
+    console.log(`enrich: cleared ${count ?? "?"} existing responsibilities for chat ${chat_id}`);
+  }
+}
 
 /**
  * Fetches all messages linked to the given import_id via import_messages,
