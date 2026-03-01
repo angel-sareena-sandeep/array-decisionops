@@ -1,0 +1,40 @@
+2/3/25, 11:00 AM - Zara: alright team we need to lock in the big product decisions today, no more back and forth
+2/3/25, 11:02 AM - Kiran: let's start with the payment provider, we've been stuck on this
+2/3/25, 11:04 AM - Marcus: we looked at Stripe and Paddle both, I'd go with Stripe, documentation is miles better
+2/3/25, 11:06 AM - Tanya: Stripe also has better developer tooling and we can test locally easily
+2/3/25, 11:08 AM - Zara: ok we'll use Stripe for all payment processing, full stop
+2/3/25, 11:10 AM - Kiran: I'll set up the Stripe integration and webhook handlers this week
+2/3/25, 11:12 AM - Marcus: for the launch date, the plan is to go live on March 1st
+2/3/25, 11:14 AM - Tanya: that's 4 weeks from now, very tight but doable if we cut scope
+2/3/25, 11:16 AM - Zara: we've decided March 1st is the hard launch date, it does not move
+2/3/25, 11:18 AM - Marcus: I will draft the go-to-market email sequence today
+2/3/25, 11:20 AM - Kiran: for the MVP feature set, let's go with auth, dashboard, and exports only
+2/3/25, 11:22 AM - Tanya: I propose we cut the analytics module entirely from the MVP scope
+2/3/25, 11:24 AM - Zara: I think we should cut analytics and the mobile view too, keep it lean
+2/3/25, 11:26 AM - Marcus: agreed on cutting both, we ship them in v2 post-launch
+2/3/25, 11:28 AM - Kiran: decision: MVP scope is auth, dashboard, and data exports only, nothing else
+2/3/25, 11:30 AM - Tanya: I'll handle all the dashboard UI components and layout
+2/3/25, 11:32 AM - Zara: can you set up the CI/CD pipeline Marcus
+2/3/25, 11:33 AM - Marcus: I'll take care of that by end of this week
+2/3/25, 11:36 AM - Kiran: for hosting, we're using Vercel for frontend and Railway for the backend API
+2/3/25, 11:38 AM - Tanya: please review the API contracts before anyone starts building against them
+2/3/25, 11:40 AM - Zara: I will review and share feedback by Tuesday
+2/3/25, 11:42 AM - Marcus: action item: Tanya to complete the full auth flow by February 14th
+2/3/25, 11:44 AM - Tanya: on it, will have a PR up by Thursday this week
+2/3/25, 11:47 AM - Kiran: we should do a full internal demo dry run before launch to catch anything broken
+2/3/25, 11:49 AM - Zara: let's do the dry run on February 26th, that gives a week buffer before March 1st
+2/3/25, 11:51 AM - Marcus: I'll book a calendar slot for everyone for the 26th
+2/3/25, 11:53 AM - Tanya: for pricing, we're going with a freemium model, free tier plus paid pro
+2/3/25, 11:55 AM - Zara: we settled on 29 dollars per month for the pro tier, that's the number
+2/3/25, 11:57 AM - Kiran: I will set up the pricing page and billing portal on the website
+2/3/25, 11:59 AM - Marcus: we're going with Product Hunt for the main launch announcement
+2/3/25, 12:01 PM - Zara: all agreed, we launch on Product Hunt on March 1st at 12:01 AM
+2/3/25, 12:03 PM - Tanya: I'll coordinate with the PH community manager this week to get it scheduled
+2/3/25, 12:05 PM - Kiran: need you to send the press kit and screenshots to the journalist contacts Marcus
+2/3/25, 12:07 PM - Marcus: I'll get that sent by Wednesday
+2/3/25, 12:09 PM - Zara: we're doing a soft beta with 20 users before launch, let's go ahead with that this week
+2/3/25, 12:11 PM - Kiran: I will reach out to the beta list and send onboarding emails today
+2/3/25, 12:13 PM - Tanya: would you be able to write up the beta feedback form Zara
+2/3/25, 12:14 PM - Zara: I'll take care of the feedback form and send it to the group for review first
+2/3/25, 12:16 PM - Marcus: the plan is to collect beta feedback by February 20th so we have time to act on it
+2/3/25, 12:18 PM - Kiran: going ahead with the launch plan as discussed, locking it in now

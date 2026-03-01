@@ -1,0 +1,40 @@
+1/20/25, 10:00 AM - Dr Sarah: team let's align on the methodology before we start running anything
+1/20/25, 10:02 AM - Mia: I think we should use BERT as our baseline model, it's well established in the literature
+1/20/25, 10:04 AM - Jonas: let's go with BERT as the baseline, we can compare against it cleanly
+1/20/25, 10:06 AM - Preet: works for me, BERT is the standard reference point
+1/20/25, 10:08 AM - Dr Sarah: ok we decided to use BERT as our primary baseline model for the paper
+1/20/25, 10:10 AM - Mia: I'll handle the BERT fine-tuning experiments on the training set
+1/20/25, 10:12 AM - Jonas: can you share the dataset preprocessing scripts Preet
+1/20/25, 10:13 AM - Preet: I'll send them by end of today
+1/20/25, 10:16 AM - Dr Sarah: for the corpus, we've decided to use the SQuAD 2.0 dataset
+1/20/25, 10:18 AM - Jonas: I will prepare the train and test splits by tomorrow
+1/20/25, 10:21 AM - Mia: decision: we move forward with an ablation study on attention head count
+1/20/25, 10:23 AM - Dr Sarah: I'll coordinate with the HPC team to get GPU access sorted
+1/20/25, 10:26 AM - Preet: the plan is to have preliminary results ready by end of next week
+1/20/25, 10:28 AM - Jonas: please submit your experiment config files to the shared drive by Wednesday
+1/20/25, 10:30 AM - Mia: on it, will upload my configs today
+1/20/25, 10:33 AM - Dr Sarah: for the paper format we're going with the NeurIPS template
+1/20/25, 10:35 AM - Preet: I will write the related work and background section
+1/20/25, 10:37 AM - Jonas: I'll take care of the experiments and results section
+1/20/25, 10:39 AM - Mia: could you confirm the submission portal deadline Jonas
+1/20/25, 10:41 AM - Jonas: deadline is March 15, we need to submit by then
+1/20/25, 10:43 AM - Dr Sarah: the plan is to have the full draft completed by March 10 so we have buffer
+1/20/25, 10:45 AM - Preet: I'll make sure the related work is done well before that
+1/20/25, 10:47 AM - Dr Sarah: we approved the ablation scope, just attention heads and layer depth for now
+1/20/25, 10:49 AM - Mia: I will share intermediate results with the group every Friday
+1/21/25, 2:14 PM - Dr Sarah: update for everyone - we got informal feedback from a workshop reviewer
+1/21/25, 2:16 PM - Jonas: what did they flag
+1/21/25, 2:17 PM - Dr Sarah: they noted that RoBERTa is a stronger and more current baseline for our specific task
+1/21/25, 2:19 PM - Mia: I've seen that too in recent papers, RoBERTa does outperform BERT on this benchmark
+1/21/25, 2:21 PM - Jonas: I think we should switch the baseline to RoBERTa before we go further
+1/21/25, 2:23 PM - Preet: agreed, better to change it now than after full experiments
+1/21/25, 2:25 PM - Dr Sarah: we've decided to switch to RoBERTa as our primary baseline, replacing BERT
+1/21/25, 2:27 PM - Mia: I'll update all experiment scripts to use RoBERTa checkpoint
+1/21/25, 2:29 PM - Jonas: I will re-run the baseline experiments with RoBERTa by Friday
+1/21/25, 2:31 PM - Preet: assigned to me: update the methodology section to reflect the model change
+1/21/25, 2:33 PM - Dr Sarah: all agreed then, we are moving forward with RoBERTa as the new baseline
+1/21/25, 2:35 PM - Mia: we should also update the abstract to remove BERT references
+1/21/25, 2:37 PM - Dr Sarah: I'll take care of the abstract and introduction updates
+1/21/25, 2:39 PM - Jonas: can you also update the related work citations Preet
+1/21/25, 2:40 PM - Preet: I will review and update all citations by end of this week
+1/21/25, 2:42 PM - Dr Sarah: finalized then, RoBERTa baseline, NeurIPS format, submission by March 15

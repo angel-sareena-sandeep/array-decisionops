@@ -1,0 +1,59 @@
+1/13/25, 9:01 AM - Priya: ok everyone lets get the capstone decisions locked today, we have been going back and forth too long
+1/13/25, 9:03 AM - Rohan: agreed, let's start with the tech stack
+1/13/25, 9:04 AM - Anika: I think we should go with Python for the backend, best ML library support by far
+1/13/25, 9:05 AM - Dev: FastAPI is lightweight and async, would pair well
+1/13/25, 9:07 AM - Rohan: yeah I think we should use FastAPI over Flask, easier to document too
+1/13/25, 9:09 AM - Priya: ok we decided on Python and FastAPI for the backend stack
+1/13/25, 9:11 AM - Rohan: I'll set up the repo and folder structure today
+1/13/25, 9:12 AM - Anika: I'll handle the data preprocessing pipeline
+1/13/25, 9:13 AM - Dev: can you add a requirements.txt when you set up the repo Rohan
+1/13/25, 9:14 AM - Rohan: sure, I'll do that too
+1/13/25, 9:17 AM - Priya: for the ML model approach, let's go with collaborative filtering as the primary method
+1/13/25, 9:19 AM - Anika: makes sense, it performs well on sparse rating data
+1/13/25, 9:21 AM - Dev: going with PostgreSQL for the database, it's what we all know
+1/13/25, 9:22 AM - Priya: I will prepare the database schema by tomorrow morning
+1/13/25, 9:24 AM - Rohan: the plan is to have a working prototype ready by end of next week
+1/13/25, 9:26 AM - Anika: can you share the project brief doc with everyone Dev
+1/13/25, 9:27 AM - Dev: I'll send it this afternoon once I clean it up
+1/13/25, 9:30 AM - Priya: we need to decide who does the final presentation
+1/13/25, 9:32 AM - Rohan: I vote for Anika, she explains things really clearly
+1/13/25, 9:33 AM - Dev: agreed, Anika is the best presenter in the group
+1/13/25, 9:34 AM - Anika: ok I'm fine with that
+1/13/25, 9:35 AM - Priya: all agreed. Anika presents on demo day
+1/13/25, 9:36 AM - Priya: confirmed. Anika is our presenter for the final submission demo
+1/13/25, 9:38 AM - Rohan: for the report format, let's pick IEEE template, it's what the department expects
+1/13/25, 9:40 AM - Anika: the plan is to submit the final report by Friday 5 PM, hard deadline
+1/13/25, 9:42 AM - Dev: I will review the full report draft before we submit anything
+1/13/25, 9:44 AM - Priya: action item: Rohan to complete all backend API endpoints by Wednesday
+1/13/25, 9:45 AM - Rohan: on it, will have everything done by Wednesday evening
+1/13/25, 9:47 AM - Anika: please share all model evaluation results with the group before Thursday
+1/13/25, 9:49 AM - Dev: I'm going to run the baseline accuracy tests today
+1/13/25, 9:51 AM - Priya: we've decided the final submission uses the v2 collaborative filtering model
+1/13/25, 9:53 AM - Dev: assigned to me: write the results and discussion section
+1/13/25, 9:54 AM - Rohan: I'll take care of the references and bibliography section
+1/13/25, 9:56 AM - Anika: I will update the abstract once all results are in
+1/13/25, 9:58 AM - Priya: we're using the university HPC cluster for the final training run, confirmed access
+1/13/25, 10:00 AM - Dev: need you to send the dataset access credentials to the group Priya
+1/13/25, 10:01 AM - Priya: I'll send them now
+1/14/25, 10:05 AM - Priya: quick update everyone, HPC cluster access got revoked, we need to sort this
+1/14/25, 10:07 AM - Rohan: what happened
+1/14/25, 10:08 AM - Priya: department says the cluster is reserved for PhD students until March, we can't use it
+1/14/25, 10:10 AM - Dev: so we need to find an alternative, Google Colab Pro or AWS?
+1/14/25, 10:12 AM - Anika: I think we should use Google Colab Pro, cheaper and we all have access already
+1/14/25, 10:14 AM - Rohan: agreed, Colab Pro is fine for our dataset size
+1/14/25, 10:15 AM - Priya: we've decided to switch from HPC cluster to Google Colab Pro for the final training run
+1/14/25, 10:17 AM - Dev: I'll set up the shared Colab notebooks and link them in the repo
+1/14/25, 10:19 AM - Priya: also the Friday submission deadline has changed, the department extended it to next Monday 9 AM
+1/14/25, 10:21 AM - Anika: ok so the plan is to submit the final report by Monday 9 AM, not Friday
+1/14/25, 10:23 AM - Rohan: that actually gives us more time to polish the results section
+1/14/25, 10:25 AM - Dev: I will re-run all accuracy tests on Colab to make sure numbers match
+1/14/25, 10:27 AM - Priya: action item: Anika to re-check all figures and tables before Monday
+1/14/25, 10:28 AM - Anika: on it, I'll go through everything by Sunday afternoon
+1/14/25, 10:30 AM - Rohan: we should also add a limitations section, the reviewer guidelines mention it
+1/14/25, 10:32 AM - Priya: let's do that, I'll write the limitations and future work section
+1/14/25, 10:34 AM - Dev: we're going with a two-column IEEE format, confirmed that's the right template
+1/14/25, 10:36 AM - Anika: can you share the final compiled PDF with everyone before submission Dev
+1/14/25, 10:37 AM - Dev: I'll send the final PDF by Sunday 8 PM so we all have a chance to review
+1/14/25, 10:39 AM - Priya: we settled on Anika doing the live demo, Rohan handling Q&A on the backend
+1/14/25, 10:41 AM - Rohan: works for me, I'll prepare answers for likely technical questions
+1/14/25, 10:43 AM - Priya: all agreed. Anika demos, Rohan handles technical Q&A on demo day
