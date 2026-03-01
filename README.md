@@ -101,6 +101,25 @@ Decision record schema: [docs/decision-record.md](docs/decision-record.md)
 
 ---
 
+## Demo WhatsApp Exports
+
+These files are included so anyone (including judges) can reproduce the MVP quickly.
+
+**Location:** `demo/demoExports/`
+
+- [research_collab.txt](demo/demoExports/research_collab.txt)
+- [research_collab_2.txt](demo/demoExports/research_collab_2.txt)
+- [startup_decisions.txt](demo/demoExports/startup_decisions.txt)
+- [startup_decisions_2.txt](demo/demoExports/startup_decisions_2.txt)
+- [student_project_team.txt](demo/demoExports/student_project_team.txt)
+- [student_project_team_2.txt](demo/demoExports/student_project_team_2.txt)
+
+### What each pair demonstrates
+- `*_1.txt` → initial import (baseline)
+- `*_2.txt` → updated export (re-import) to show **incremental sync** and possible **decision version updates**
+
+---
+
 ## How to Run
 
 **Prerequisites:** Node.js 18+, a Supabase project with the required schema applied.
