@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 
 type Status = "idle" | "loading" | "success" | "error";
 
@@ -24,6 +24,44 @@ export default function ImportCard() {
     "idle" | "loading" | "done" | "error"
   >("idle");
   const [enrichMessage, setEnrichMessage] = useState<string>("");
+
+  // Ref-based lock to survive page navigation
+  const importingRef = useRef(false);
+  const enrichingRef = useRef(false);
+
+  // Auto-dismiss notice messages after a timeout
+  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const enrichDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleDismiss = useCallback(
+    (which: "import" | "enrich", ms = 6000) => {
+      if (which === "import") {
+        if (dismissTimer.current) clearTimeout(dismissTimer.current);
+        dismissTimer.current = setTimeout(() => {
+          setMessage("");
+          setStatus("idle");
+          dismissTimer.current = null;
+        }, ms);
+      } else {
+        if (enrichDismissTimer.current)
+          clearTimeout(enrichDismissTimer.current);
+        enrichDismissTimer.current = setTimeout(() => {
+          setEnrichMessage("");
+          setEnrichStatus("idle");
+          enrichDismissTimer.current = null;
+        }, ms);
+      }
+    },
+    [],
+  );
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (dismissTimer.current) clearTimeout(dismissTimer.current);
+      if (enrichDismissTimer.current) clearTimeout(enrichDismissTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     setHasChatLoaded(!!localStorage.getItem("decisionops_chat_id"));
@@ -51,8 +89,9 @@ export default function ImportCard() {
   }
 
   async function handleSubmit() {
-    if (!selectedFile) return;
+    if (!selectedFile || importingRef.current) return;
 
+    importingRef.current = true;
     setStatus("loading");
     setMessage("");
 
@@ -96,9 +135,13 @@ export default function ImportCard() {
         );
       }
       setSelectedFile(null);
+      scheduleDismiss("import");
     } catch (err: unknown) {
       setStatus("error");
       setMessage(err instanceof Error ? err.message : "Upload failed.");
+      scheduleDismiss("import", 8000);
+    } finally {
+      importingRef.current = false;
     }
   }
 
@@ -135,8 +178,9 @@ export default function ImportCard() {
 
   async function handleEnrich() {
     const chat_id = localStorage.getItem("decisionops_chat_id");
-    if (!chat_id) return;
+    if (!chat_id || enrichingRef.current) return;
 
+    enrichingRef.current = true;
     setEnrichStatus("loading");
     setEnrichMessage("");
 
@@ -162,11 +206,21 @@ export default function ImportCard() {
           ? `AI enrichment complete via ${providerLabel} (${json.candidate_messages_sent ?? "?"} messages analysed) — ${json.decisions_added ?? 0} new decisions, ${json.responsibilities_added ?? 0} new responsibilities.`
           : "LLM unavailable — no new items from AI.",
       );
+      scheduleDismiss("enrich");
+      // Refresh dashboard after enrichment
+      window.dispatchEvent(
+        new CustomEvent("decisionops:imported", {
+          detail: { chat_id },
+        }),
+      );
     } catch (err: unknown) {
       setEnrichStatus("error");
       setEnrichMessage(
         err instanceof Error ? err.message : "Enrichment failed.",
       );
+      scheduleDismiss("enrich", 8000);
+    } finally {
+      enrichingRef.current = false;
     }
   }
 
@@ -207,9 +261,7 @@ export default function ImportCard() {
       {message && (
         <p
           className={`mt-3 text-sm font-medium ${
-            status === "success"
-              ? "text-[#56E1E9]"
-              : "text-red-400"
+            status === "success" ? "text-[#56E1E9]" : "text-red-400"
           }`}
         >
           {message}
@@ -246,7 +298,9 @@ export default function ImportCard() {
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={!selectedFile || status === "loading"}
+          disabled={
+            !selectedFile || status === "loading" || enrichStatus === "loading"
+          }
           className="flex-1 bg-[#5B58EB] text-white py-3 rounded-lg font-medium hover:bg-[#5B58EB]/80 transition disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {status === "loading" ? "Importing…" : "Import & Sync"}
@@ -255,7 +309,7 @@ export default function ImportCard() {
           <button
             type="button"
             onClick={handleEnrich}
-            disabled={enrichStatus === "loading"}
+            disabled={enrichStatus === "loading" || status === "loading"}
             className="px-4 py-3 bg-[#BB63FF]/20 text-[#BB63FF] border border-[#BB63FF]/40 rounded-lg font-medium hover:bg-[#BB63FF]/30 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
           >
             {enrichStatus === "loading" ? "Enriching…" : "✨ Run AI Enrichment"}
@@ -277,9 +331,7 @@ export default function ImportCard() {
       {enrichMessage && (
         <p
           className={`mt-3 text-sm font-medium ${
-            enrichStatus === "done"
-              ? "text-[#BB63FF]"
-              : "text-red-400"
+            enrichStatus === "done" ? "text-[#BB63FF]" : "text-red-400"
           }`}
         >
           {enrichMessage}

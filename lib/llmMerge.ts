@@ -24,9 +24,42 @@ import { generateHash } from "./hash";
 // ─── Title similarity helper ──────────────────────────────────────────────────
 
 const STOP_WORDS = new Set([
-  "the","a","an","and","or","but","in","on","at","to","for","of","with",
-  "is","was","are","were","be","been","that","this","it","its","by","from",
-  "as","into","about","than","then","we","our","all","will","has","have",
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "but",
+  "in",
+  "on",
+  "at",
+  "to",
+  "for",
+  "of",
+  "with",
+  "is",
+  "was",
+  "are",
+  "were",
+  "be",
+  "been",
+  "that",
+  "this",
+  "it",
+  "its",
+  "by",
+  "from",
+  "as",
+  "into",
+  "about",
+  "than",
+  "then",
+  "we",
+  "our",
+  "all",
+  "will",
+  "has",
+  "have",
 ]);
 
 function significantWords(title: string): Set<string> {
@@ -55,6 +88,9 @@ export function mergeDecisions(
   deterministic: ExtractDecisionsResult,
   llm: LLMDecision[],
 ): ExtractDecisionsResult {
+  console.log(
+    `merge: deterministic=${deterministic.items.length}, llm=${llm.length}`,
+  );
   if (llm.length === 0) return deterministic;
 
   // Build reverse map: msg_sha256 → deterministic decision id
@@ -76,6 +112,11 @@ export function mergeDecisions(
     ...deterministic.evidenceByDecisionId,
   };
 
+  // Track which deterministic ids were enriched by the LLM.
+  // At the end we drop unmatched deterministic items — they have raw message
+  // text as titles (from buildDecisionTitle) which produces verbatim copies.
+  const matchedDetIds = new Set<string>();
+
   for (const llmDec of llm) {
     // Find first overlapping deterministic decision
     let matchedId: string | null = null;
@@ -88,6 +129,7 @@ export function mergeDecisions(
 
     if (matchedId && itemsById[matchedId]) {
       // Enrich the existing deterministic item with LLM quality fields
+      matchedDetIds.add(matchedId);
       itemsById[matchedId] = {
         ...itemsById[matchedId],
         title: llmDec.title,
@@ -119,19 +161,39 @@ export function mergeDecisions(
     }
   }
 
+  console.log(
+    `merge: matched=${matchedDetIds.size}, net-new=${Object.keys(itemsById).length - matchedDetIds.size}, dropping ${deterministic.items.length - matchedDetIds.size} unmatched deterministic`,
+  );
+
+  // Drop any deterministic items the LLM didn't touch — they carry verbatim
+  // message text as titles. Only keep LLM-enriched items + net-new LLM items.
+  for (const item of deterministic.items) {
+    if (!matchedDetIds.has(item.id)) {
+      delete itemsById[item.id];
+      delete evidenceById[item.id];
+    }
+  }
+
+  console.log(
+    `merge: after drop+dedup = ${Object.keys(itemsById).length} decisions`,
+  );
+
   // Deduplicate by thread_key: if multiple items share the same thread_key
   // (e.g. original decision + confirmation restatement both extracted), keep
   // the one with the highest confidence and merge their evidence hashes.
   const byThreadKey: Record<string, string[]> = {};
   for (const [id, item] of Object.entries(itemsById)) {
-    const key = (item as DecisionItem & { thread_key?: string }).thread_key ?? id;
+    const key =
+      (item as DecisionItem & { thread_key?: string }).thread_key ?? id;
     if (!byThreadKey[key]) byThreadKey[key] = [];
     byThreadKey[key].push(id);
   }
   for (const ids of Object.values(byThreadKey)) {
     if (ids.length <= 1) continue;
     // Keep the item with highest confidence
-    ids.sort((a, b) => (itemsById[b].confidence ?? 0) - (itemsById[a].confidence ?? 0));
+    ids.sort(
+      (a, b) => (itemsById[b].confidence ?? 0) - (itemsById[a].confidence ?? 0),
+    );
     const winnerId = ids[0];
     const mergedHashes = new Set(evidenceById[winnerId] ?? []);
     for (const loserId of ids.slice(1)) {
@@ -151,7 +213,8 @@ export function mergeDecisions(
     for (let j = i + 1; j < allIds.length; j++) {
       const idB = allIds[j];
       if (!itemsById[idB]) continue;
-      if (!titlesAreDuplicates(itemsById[idA].title, itemsById[idB].title)) continue;
+      if (!titlesAreDuplicates(itemsById[idA].title, itemsById[idB].title))
+        continue;
       // Merge: keep higher-confidence item
       const [winnerId, loserId] =
         (itemsById[idA].confidence ?? 0) >= (itemsById[idB].confidence ?? 0)

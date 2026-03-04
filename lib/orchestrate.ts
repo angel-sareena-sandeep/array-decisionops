@@ -25,9 +25,48 @@ import {
   persistDecisions,
   persistResponsibilities,
 } from "./decisionEngine";
-import { runLLMOnMessages } from "./llm";
-import { mergeDecisions, mergeResponsibilities } from "./llmMerge";
-import { DecisionItem } from "./contracts";
+import { runLLMOnMessages, ExistingDecision } from "./llm";
+import { DecisionItem, ResponsibilityItem } from "./contracts";
+import { generateHash } from "./hash";
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+async function fetchExistingDecisions(
+  supabase: SupabaseClient,
+  chat_id: string,
+): Promise<ExistingDecision[]> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data: threads } = await db
+    .from("decision_threads")
+    .select("id, thread_key")
+    .eq("chat_id", chat_id);
+  if (!threads || threads.length === 0) return [];
+  const threadIds = threads.map((t: { id: string }) => t.id);
+  const { data: decisions } = await db
+    .from("decisions")
+    .select("thread_id, version_no, decision_title")
+    .in("thread_id", threadIds)
+    .order("version_no", { ascending: false });
+  if (!decisions) return [];
+  const threadKeyById = Object.fromEntries(
+    threads.map((t: { id: string; thread_key: string }) => [
+      t.id,
+      t.thread_key,
+    ]),
+  );
+  const latestByThread: Record<string, ExistingDecision> = {};
+  for (const d of decisions) {
+    if (!latestByThread[d.thread_id]) {
+      latestByThread[d.thread_id] = {
+        thread_key: threadKeyById[d.thread_id],
+        title: d.decision_title,
+        version: d.version_no,
+      };
+    }
+  }
+  return Object.values(latestByThread);
+}
 
 function slugify(text: string): string {
   return text
@@ -173,33 +212,115 @@ export async function runEnrichment(args: {
     };
   }
 
-  // Deterministic baseline (needed by merge functions)
+  // Deterministic baseline — the drafts that the LLM will improve
   const decisionsBase = extractDecisions(messages);
   const responsibilitiesBase = extractResponsibilities(messages);
-  let decisionsResult = decisionsBase;
-  let responsibilitiesResult = responsibilitiesBase;
   let llm_used: EnrichResult["llm_used"] = "deterministic";
 
-  console.log(`enrich: sending all ${messages.length} messages to LLM`);
+  console.log(
+    `enrich: ${messages.length} messages, ${decisionsBase.items.length} draft decisions, ${responsibilitiesBase.items.length} draft responsibilities`,
+  );
 
-  // LLM pass — let the error bubble up so the route can return 500
-  const llmOutput = await runLLMOnMessages(messages);
+  // Prepare draft decisions for the LLM (title + status + confidence + evidence)
+  const draftDecisions = decisionsBase.items.map((d) => ({
+    title: d.title,
+    status: d.status,
+    confidence: d.confidence,
+    evidence_hashes: decisionsBase.evidenceByDecisionId[d.id] ?? [],
+  }));
+
+  // Prepare draft responsibilities for the LLM
+  const draftResponsibilities = responsibilitiesBase.items.map((r) => ({
+    title: r.title,
+    owner: r.owner,
+    description: r.description ?? "",
+    evidence_hash:
+      (responsibilitiesBase.evidenceByResponsibilityId[r.id] ?? [])[0] ?? "",
+  }));
+
+  // Fetch previously-tracked decisions so the LLM can reuse their thread_keys
+  const existingDecisions = await fetchExistingDecisions(supabase, chat_id);
+  console.log(
+    `enrich: found ${existingDecisions.length} existing decisions for thread_key reuse`,
+  );
+
+  // LLM pass — send drafts + messages + existing decisions for context
+  const llmOutput = await runLLMOnMessages(
+    messages,
+    draftDecisions,
+    draftResponsibilities,
+    existingDecisions,
+  );
+  console.log(
+    `enrich: LLM returned ${llmOutput.decisions.length} decisions, ${llmOutput.responsibilities.length} responsibilities (provider: ${llmOutput.provider})`,
+  );
+
+  // Convert LLM output directly to the format persistDecisions expects.
+  // The LLM output IS the final result — no merge needed.
+  // Falls back to deterministic baseline if LLM returned nothing.
+  let finalDecisions: DecisionItem[];
+  let finalEvidenceByDecisionId: Record<string, string[]>;
+  let finalResponsibilities: ResponsibilityItem[];
+  let finalEvidenceByResponsibilityId: Record<string, string[]>;
+
   if (
     llmOutput.provider !== null &&
     (llmOutput.decisions.length > 0 || llmOutput.responsibilities.length > 0)
   ) {
-    decisionsResult = mergeDecisions(decisionsBase, llmOutput.decisions);
-    responsibilitiesResult = mergeResponsibilities(
-      responsibilitiesBase,
-      llmOutput.responsibilities,
-    );
     llm_used = llmOutput.provider;
+
+    // Build decision items from LLM output
+    finalDecisions = llmOutput.decisions.map((d) => {
+      const id = "dec_" + generateHash("decision|" + d.thread_key).slice(0, 12);
+      return {
+        id,
+        title: d.title,
+        version: 1, // persistDecisions will auto-assign the real version
+        status: d.status,
+        confidence: d.confidence,
+        explanation: d.explanation,
+        timestamp: d.decided_at,
+        lastUpdated: d.decided_at,
+        thread_key: d.thread_key,
+      } as DecisionItem & { thread_key: string };
+    });
+    finalEvidenceByDecisionId = {};
+    for (const [i, d] of llmOutput.decisions.entries()) {
+      finalEvidenceByDecisionId[finalDecisions[i].id] = d.evidence_hashes;
+    }
+
+    // Build responsibility items from LLM output
+    finalResponsibilities = llmOutput.responsibilities.map((r) => {
+      const id = "resp_" + generateHash("resp|" + r.evidence_hash).slice(0, 12);
+      return {
+        id,
+        title: r.title,
+        owner: r.owner,
+        due: r.due,
+        description: r.description,
+        status: "Open" as const,
+        timestamp: "",
+        evidenceCount: 1,
+      };
+    });
+    finalEvidenceByResponsibilityId = {};
+    for (const [i, r] of llmOutput.responsibilities.entries()) {
+      finalEvidenceByResponsibilityId[finalResponsibilities[i].id] = [
+        r.evidence_hash,
+      ];
+    }
+  } else {
+    // LLM failed — fall back to deterministic baseline
+    finalDecisions = decisionsBase.items;
+    finalEvidenceByDecisionId = decisionsBase.evidenceByDecisionId;
+    finalResponsibilities = responsibilitiesBase.items;
+    finalEvidenceByResponsibilityId =
+      responsibilitiesBase.evidenceByResponsibilityId;
   }
 
-  // Compute which thread_keys the enriched result will occupy so we can
-  // clean up stale deterministic threads afterwards.
+  // Compute which thread_keys the final result occupies
   const enrichedThreadKeys = new Set(
-    decisionsResult.items.map(
+    finalDecisions.map(
       (d) =>
         (d as DecisionItem & { thread_key?: string }).thread_key ??
         slugify(d.title),
@@ -209,25 +330,41 @@ export async function runEnrichment(args: {
   // Clear responsibilities before re-inserting (no versioning for them).
   await clearResponsibilitiesForChat(supabase, chat_id);
 
-  // Persist decisions WITHOUT pre-clearing — version-aware compare runs
-  // against existing DB rows, so v2/v3 are detected correctly.
+  // Persist decisions — version-aware compare detects v2/v3 automatically.
   const decPersist = await persistDecisions({
     supabase: supabase as unknown,
     chat_id,
-    decisions: decisionsResult.items,
-    evidenceByDecisionId: decisionsResult.evidenceByDecisionId,
+    decisions: finalDecisions,
+    evidenceByDecisionId: finalEvidenceByDecisionId,
   });
   const respPersist = await persistResponsibilities({
     supabase: supabase as unknown,
     chat_id,
-    responsibilities: responsibilitiesResult.items,
-    evidenceByResponsibilityId:
-      responsibilitiesResult.evidenceByResponsibilityId,
+    responsibilities: finalResponsibilities,
+    evidenceByResponsibilityId: finalEvidenceByResponsibilityId,
   });
 
-  // Delete stale threads not in the enriched result (removes old deterministic
-  // threads without destroying version history on LLM threads).
-  await deleteStaleThreads(supabase, chat_id, enrichedThreadKeys);
+  console.log(
+    `enrich: persisted ${decPersist.decisions_inserted} new decisions, ${respPersist.inserted} responsibilities`,
+  );
+
+  // Delete stale threads only when the LLM actually produced results
+  if (llm_used !== "deterministic" && enrichedThreadKeys.size > 0) {
+    if (decPersist.threads_inserted > 0 || decPersist.decisions_inserted > 0) {
+      await deleteStaleThreads(supabase, chat_id, enrichedThreadKeys);
+    } else {
+      // LLM ran but nothing new written — verify all enriched threads exist
+      // before deleting stale ones (content-same skip in persistDecisions).
+      const existingEnrichedIds = await getThreadIdsForKeys(
+        supabase,
+        chat_id,
+        enrichedThreadKeys,
+      );
+      if (existingEnrichedIds.size === enrichedThreadKeys.size) {
+        await deleteStaleThreads(supabase, chat_id, enrichedThreadKeys);
+      }
+    }
+  }
 
   return {
     messages_analysed: messages.length,
@@ -236,6 +373,26 @@ export async function runEnrichment(args: {
     responsibilities_added: respPersist.inserted,
     llm_used,
   };
+}
+
+/**
+ * Returns the set of thread_keys from `keys` that actually exist in the DB.
+ * Used to verify all enriched threads were persisted before deleting stale ones.
+ */
+async function getThreadIdsForKeys(
+  supabase: SupabaseClient,
+  chat_id: string,
+  keys: Set<string>,
+): Promise<Set<string>> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = supabase as any;
+  const { data } = await db
+    .from("decision_threads")
+    .select("thread_key")
+    .eq("chat_id", chat_id)
+    .in("thread_key", Array.from(keys));
+  if (!data) return new Set();
+  return new Set((data as { thread_key: string }[]).map((r) => r.thread_key));
 }
 
 /**
@@ -275,7 +432,9 @@ async function deleteStaleThreads(
   }
 
   await db.from("decision_threads").delete().in("id", staleIds);
-  console.log(`enrich: deleted ${staleIds.length} stale threads for chat ${chat_id}`);
+  console.log(
+    `enrich: deleted ${staleIds.length} stale threads for chat ${chat_id}`,
+  );
 }
 
 /**
@@ -295,7 +454,9 @@ async function clearResponsibilitiesForChat(
   if (error) {
     console.error("enrich: failed to clear responsibilities:", error.message);
   } else {
-    console.log(`enrich: cleared ${count ?? "?"} existing responsibilities for chat ${chat_id}`);
+    console.log(
+      `enrich: cleared ${count ?? "?"} existing responsibilities for chat ${chat_id}`,
+    );
   }
 }
 

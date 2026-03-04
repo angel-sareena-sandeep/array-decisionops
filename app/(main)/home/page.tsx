@@ -14,6 +14,7 @@ type Summary = {
   duplicates_skipped_latest: number;
   open_responsibilities_count: number;
   latest_decisions_count: number;
+  v2_plus_count: number;
 };
 
 function fmt(n: number | null | undefined): string {
@@ -90,7 +91,7 @@ export default function HomePage() {
       title: "Latest Valid Decisions",
       value: fmt(summary?.latest_decisions_count),
     },
-    { title: "Decisions Updated (v2+)", value: "-" },
+    { title: "Decisions Updated (v2+)", value: fmt(summary?.v2_plus_count) },
     {
       title: "Open Responsibilities",
       value: fmt(summary?.open_responsibilities_count),

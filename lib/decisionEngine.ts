@@ -263,22 +263,36 @@ export async function persistDecisions(args: {
     if (!threadRow) continue;
     const thread_id: string = threadRow.id;
 
-    // App-level idempotency: skip if this thread+version is already persisted
-    const { data: existingDec } = await db
+    // Content-aware idempotency:
+    // Fetch the latest version for this thread and compare content.
+    // Identical content → skip. Different content → insert as v_max+1.
+    const { data: latestDec } = await db
       .from("decisions")
-      .select("id")
+      .select(
+        "id, version_no, decision_title, status, confidence, final_outcome",
+      )
       .eq("thread_id", thread_id)
-      .eq("version_no", dec.version)
+      .order("version_no", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
-    if (existingDec) continue;
+    let nextVersion = 1;
+    if (latestDec) {
+      const same =
+        latestDec.decision_title === dec.title &&
+        latestDec.status === dec.status &&
+        latestDec.confidence === dec.confidence &&
+        (latestDec.final_outcome ?? "") === (dec.explanation ?? "");
+      if (same) continue; // identical content already stored
+      nextVersion = (latestDec.version_no as number) + 1;
+    }
 
     // Insert decision row
     const { data: decRow, error: decErr } = await db
       .from("decisions")
       .insert({
         thread_id,
-        version_no: dec.version,
+        version_no: nextVersion,
         status: dec.status,
         confidence: dec.confidence,
         decision_title: dec.title,

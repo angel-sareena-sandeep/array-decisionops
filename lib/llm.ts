@@ -12,7 +12,14 @@
 
 import { MessageInput } from "./decisionEngine";
 
-// ─── Output types ──────────────────────────────────────────────────────────────
+// ─── Output types ───────────────────────────────────────────────────────────
+
+/** A previously-tracked decision passed to the LLM so it can reuse thread_keys. */
+export type ExistingDecision = {
+  thread_key: string;
+  title: string;
+  version: number;
+};
 
 export type LLMDecision = {
   /** URL-safe slug that groups related messages into the same decision thread. */
@@ -57,56 +64,83 @@ export type LLMOutput = {
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You extract DECISIONS and RESPONSIBILITIES from WhatsApp group chat messages. Output valid JSON only — no markdown, no prose, no explanation.
+const SYSTEM_PROMPT = `You are an AI that IMPROVES and ENRICHES decisions and responsibilities extracted from a WhatsApp group chat by a rules-based system.
 
-OUTPUT FORMAT (return this exact structure, no other text):
-{"decisions":[{"thread_key":"snake_case_slug","title":"Complete sentence ≤80 chars","status":"Final|Tentative","confidence":0-100,"explanation":"1-3 sentences ≤300 chars","decided_at":"ISO8601","evidence_hashes":["m000"]}],"responsibilities":[{"title":"Action description ≤80 chars","owner":"Person name or unassigned","due":"YYYY-MM-DD or empty string","description":"1-2 sentences","evidence_hash":"m000"}]}
+You will receive:
+  1. "draft_decisions" — decisions extracted by the rules engine. They may contain duplicates, vague titles copied from messages, or overlapping entries about the same topic.
+  2. "draft_responsibilities" — responsibilities extracted by the rules engine. Same issues.
+  3. "messages" — the full WhatsApp chat for context.
+  4. (optional) "existing_decisions" — decisions already saved in the database from a previous enrichment. Used ONLY for thread_key reuse and version detection.
 
-Message IDs: each input message has an "id" field (m000, m001…). Use ONLY these short IDs in evidence_hashes and evidence_hash — never copy any other value.
+YOUR JOB:
+  Read the chat messages for context. Then output a CLEAN, IMPROVED set of decisions and responsibilities.
+  - Merge duplicates (two drafts about the same topic → one decision).
+  - Rewrite vague titles into clear factual statements.
+  - Add any decisions or responsibilities the rules engine MISSED.
+  - Remove false positives (drafts that aren't real decisions).
+  - Assign proper confidence, status, and evidence.
+
+Output valid JSON only — no markdown, no prose, no explanation.
+
+OUTPUT FORMAT:
+{"decisions":[{"thread_key":"snake_case_slug","title":"Factual statement ≤80 chars","status":"Final|Tentative","confidence":0-100,"explanation":"1-3 sentences ≤300 chars","decided_at":"ISO8601","evidence_hashes":["m000"]}],"responsibilities":[{"title":"Action ≤80 chars","owner":"Person or unassigned","due":"YYYY-MM-DD or empty","description":"1-2 sentences","evidence_hash":"m000"}]}
+
+━━━ MESSAGE IDs ━━━
+Each message has an "id" (m000, m001…). Use ONLY these in evidence_hashes / evidence_hash.
 
 ━━━ DECISIONS ━━━
 
-BEFORE extracting, apply this filter: "What specific thing did this group decide?"
-If the answer is a vague word or reaction with no concrete content → SKIP entirely.
-Always skip: single-word replies / bare reactions ("agreed", "ok", "done", "sure", "noted", "👍", "✅") / questions / greetings / status updates with no resolution.
+For each draft decision, read the relevant chat messages and decide:
+  • Is it a real decision? (concrete outcome: a choice, deadline, person, or approach agreed on)
+    → If NO: drop it.
+    → If YES: improve it.
 
-EXTRACT when a message contains a concrete, specific outcome: a choice made, a deadline set, a person/tool/approach agreed on.
+TITLE: factual statement of WHAT was decided, max 80 chars. Write in your own words.
+  ✗ "we're using the university HPC cluster for the final training run, confirmed access" (copied message)
+  ✓ "University HPC cluster selected for final training run"
 
-TITLE: complete sentence stating WHAT was decided, max 80 chars.
-  ✗ "Agreed on frontend"  ✓ "Team chose React for the frontend framework"
+EXPLANATION: context + outcome + reasoning, max 300 chars. NOT a copy of any message.
 
-EXPLANATION: context + outcome + reasoning if visible, max 300 chars.
-  ✗ "Decision based on: agreed"  ✓ "After comparing React and Vue, the team chose React due to prior experience. All three members confirmed."
+STATUS: Final = definitive ("decided / going with / locked in / approved"). Tentative = directional ("let's try / I suggest / we should").
 
-STATUS: Final = definitive language ("we decided / going with / locked in / approved / we will"). Tentative = directional ("let's try / I suggest / we should / thinking of").
+CONFIDENCE: 90-100 explicit | 70-89 strong signal | 50-69 moderate | 30-49 weak.
 
-CONFIDENCE: 90-100 explicit declaration | 70-89 strong signal | 50-69 moderate | 30-49 weak.
+DECIDED_AT: timestamp of the message that STATES the outcome.
 
-DECIDED_AT: ts of the message that STATES the outcome — not the first reaction to it.
+THREAD_KEY: lowercase a-z 0-9 underscore, max 64 chars. Same topic = same key.
 
-THREAD_KEY: lowercase a-z 0-9 underscore, max 64 chars. Same topic = same thread_key.
+MERGING DUPLICATES: If two or more draft decisions are about the same topic, output ONE decision with all their evidence messages combined in evidence_hashes.
 
-DEDUPLICATION — critical:
-One resolved topic = ONE decision object.
-  1. The message that first states the full outcome is the decision (primary evidence).
-  2. Every later message that confirms, restates, or reacts to the same topic → append to evidence_hashes of the primary, NOT a new decision.
-  3. If two messages describe the same outcome, produce ONE object with both ids in evidence_hashes.
-
-Example:
-  m005: "Anika demos, Rohan handles Q&A" → decision, primary
-  m006: "all agreed. Anika demos, Rohan handles technical Q&A" → evidence only, add to m005's evidence_hashes
-  m007: "👍" → evidence only, add to m005's evidence_hashes
-  Correct output: ONE decision, evidence_hashes: ["m005","m006","m007"]
+Also: if you find decisions in the chat that the rules engine missed entirely, ADD them.
 
 ━━━ RESPONSIBILITIES ━━━
 
-Extract only concrete action items with a clear owner or deadline. Skip vague plans, questions, and anything already completed.
+For each draft responsibility, read the relevant message and decide:
+  • Is it a real action item? (concrete task with owner or deadline)
+    → If NO: drop it.
+    → If YES: improve it.
 
-OWNER: exact sender name if self-committing ("I will / I'll / let me / I can"); name of person addressed if delegated ("can you / please + action / you need to"). "unassigned" only if truly no person identifiable.
+TITLE: what needs to be done, max 80 chars. Active verb + object. NOT a copy of the message.
+  ✗ "I'll prepare the slides and add everything before we meet"
+  ✓ "Prepare slide deck for the demo"
 
-DUE: convert relative dates ("by Friday", "next Monday", "tomorrow") to YYYY-MM-DD relative to the message ts. Empty string if no deadline.
+DESCRIPTION: 1-2 sentences clarifying scope/context. NOT a copy of the message.
 
-EVIDENCE_HASH: single id of the message most directly stating the task.
+OWNER: exact name from the chat. "unassigned" only if truly unclear.
+
+DUE: convert relative dates to YYYY-MM-DD based on message timestamp. Empty if none.
+
+EVIDENCE_HASH: single message id most directly stating the task.
+
+Also: if you find responsibilities in the chat that the rules engine missed, ADD them.
+
+━━━ VERSIONING ━━━
+
+If "existing_decisions" is present, it lists decisions already saved from a previous run.
+For each decision you output:
+  • Same topic as an existing one → use its EXACT thread_key.
+  • New topic → invent a fresh thread_key.
+The backend compares content to detect changes and assigns v2/v3 automatically.
 
 ━━━
 
@@ -120,16 +154,58 @@ export type PromptBuild = {
   idToHash: Record<string, string>;
 };
 
-export function buildPrompt(chunk: MessageInput[]): PromptBuild {
+/**
+ * Builds the LLM prompt.
+ * Sends draft decisions/responsibilities from the deterministic engine
+ * along with the chat messages so the LLM can improve them.
+ */
+export function buildPrompt(
+  chunk: MessageInput[],
+  draftDecisions: Array<{
+    title: string;
+    status: string;
+    confidence: number;
+    evidence_hashes: string[];
+  }> = [],
+  draftResponsibilities: Array<{
+    title: string;
+    owner: string;
+    description: string;
+    evidence_hash: string;
+  }> = [],
+  existingDecisions: ExistingDecision[] = [],
+): PromptBuild {
   const idToHash: Record<string, string> = {};
+  const hashToId: Record<string, string> = {};
   const msgs = chunk.map((m, i) => {
     const id = `m${String(i).padStart(3, "0")}`;
     idToHash[id] = m.message_hash;
+    hashToId[m.message_hash] = id;
     return { id, sender: m.sender, text: m.message_text, ts: m.timestamp };
   });
+
+  // Convert draft evidence hashes (sha256) to short ids (m000…)
+  const draftsWithShortIds = draftDecisions.map((d) => ({
+    ...d,
+    evidence_hashes: d.evidence_hashes.map((h) => hashToId[h] ?? h),
+  }));
+  const respDraftsWithShortIds = draftResponsibilities.map((r) => ({
+    ...r,
+    evidence_hash: hashToId[r.evidence_hash] ?? r.evidence_hash,
+  }));
+
+  const payload: Record<string, unknown> = {
+    messages: msgs,
+    draft_decisions: draftsWithShortIds,
+    draft_responsibilities: respDraftsWithShortIds,
+  };
+  if (existingDecisions.length > 0) {
+    payload.existing_decisions = existingDecisions;
+  }
+
   return {
     systemPrompt: SYSTEM_PROMPT,
-    userContent: JSON.stringify(msgs),
+    userContent: JSON.stringify(payload),
     idToHash,
   };
 }
@@ -166,7 +242,6 @@ export function validateLLMResult(
         d.title.trim() === "" ||
         (d.status !== "Final" && d.status !== "Tentative") ||
         typeof d.confidence !== "number" ||
-        !isString(d.decided_at) ||
         !Array.isArray(d.evidence_hashes)
       ) {
         continue;
@@ -181,7 +256,7 @@ export function validateLLMResult(
         status: d.status as "Final" | "Tentative",
         confidence: Math.max(0, Math.min(100, Math.round(d.confidence))),
         explanation: isString(d.explanation) ? d.explanation.slice(0, 300) : "",
-        decided_at: d.decided_at,
+        decided_at: isString(d.decided_at) ? d.decided_at : "",
         evidence_hashes: (d.evidence_hashes as unknown[])
           .filter(isString)
           .map((id) => idToHash[id as string] ?? (id as string)),
@@ -301,7 +376,24 @@ async function callOpenRouter(
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error("OpenRouter returned empty content");
 
-  return validateLLMResult(extractJSON(text), idToHash);
+  const rawParsed = extractJSON(text);
+  const rawObj = rawParsed as Record<string, unknown> | null;
+  console.log(
+    `llm [OpenRouter] raw: decisions=${
+      Array.isArray(rawObj?.decisions)
+        ? (rawObj!.decisions as unknown[]).length
+        : "MISSING"
+    }, responsibilities=${
+      Array.isArray(rawObj?.responsibilities)
+        ? (rawObj!.responsibilities as unknown[]).length
+        : "MISSING"
+    }`,
+  );
+  const validated = validateLLMResult(rawParsed, idToHash);
+  console.log(
+    `llm [OpenRouter] validated: decisions=${validated.decisions.length}, responsibilities=${validated.responsibilities.length}`,
+  );
+  return validated;
 }
 
 async function callGroq(
@@ -343,7 +435,24 @@ async function callGroq(
   const text = data?.choices?.[0]?.message?.content;
   if (!text) throw new Error("Groq returned empty content");
 
-  return validateLLMResult(extractJSON(text), idToHash);
+  const rawParsed = extractJSON(text);
+  const rawObj = rawParsed as Record<string, unknown> | null;
+  console.log(
+    `llm [Groq] raw: decisions=${
+      Array.isArray(rawObj?.decisions)
+        ? (rawObj!.decisions as unknown[]).length
+        : "MISSING"
+    }, responsibilities=${
+      Array.isArray(rawObj?.responsibilities)
+        ? (rawObj!.responsibilities as unknown[]).length
+        : "MISSING"
+    }`,
+  );
+  const validated = validateLLMResult(rawParsed, idToHash);
+  console.log(
+    `llm [Groq] validated: decisions=${validated.decisions.length}, responsibilities=${validated.responsibilities.length}`,
+  );
+  return validated;
 }
 
 // ─── Fallback chain ───────────────────────────────────────────────────────────
@@ -421,6 +530,19 @@ const INTER_CHUNK_DELAY_MS = 3_000;
  */
 export async function runLLMOnMessages(
   messages: MessageInput[],
+  draftDecisions: Array<{
+    title: string;
+    status: string;
+    confidence: number;
+    evidence_hashes: string[];
+  }> = [],
+  draftResponsibilities: Array<{
+    title: string;
+    owner: string;
+    description: string;
+    evidence_hash: string;
+  }> = [],
+  existingDecisions: ExistingDecision[] = [],
 ): Promise<LLMOutput> {
   const allDecisions: LLMDecision[] = [];
   const allResponsibilities: LLMResponsibility[] = [];
@@ -443,7 +565,12 @@ export async function runLLMOnMessages(
 
     if (i > 0) await sleep(INTER_CHUNK_DELAY_MS);
 
-    const { systemPrompt, userContent, idToHash } = buildPrompt(chunks[i]);
+    const { systemPrompt, userContent, idToHash } = buildPrompt(
+      chunks[i],
+      draftDecisions,
+      draftResponsibilities,
+      existingDecisions,
+    );
     const outcome = await callWithFallback(
       systemPrompt,
       userContent,

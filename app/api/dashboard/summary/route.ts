@@ -69,6 +69,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   }
 
   let latest_decisions_count = 0;
+  let v2_plus_count = 0;
   if (threadRows && threadRows.length > 0) {
     const threadIds = threadRows.map((t: { id: string }) => t.id);
     const { count: decCount, error: decErr } = await supabase
@@ -79,6 +80,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: decErr.message }, { status: 500 });
     }
     latest_decisions_count = decCount ?? 0;
+
+    // ── V2+ decisions count ─────────────────────────────────────────────────
+    const { count: v2Count, error: v2Err } = await supabase
+      .from("decisions")
+      .select("id", { count: "exact", head: true })
+      .in("thread_id", threadIds)
+      .gt("version_no", 1);
+    if (v2Err) {
+      return NextResponse.json({ error: v2Err.message }, { status: 500 });
+    }
+    v2_plus_count = v2Count ?? 0;
   }
 
   return NextResponse.json({
@@ -88,5 +100,6 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     duplicates_skipped_latest,
     open_responsibilities_count: openRespCount ?? 0,
     latest_decisions_count,
+    v2_plus_count,
   });
 }
