@@ -1,25 +1,12 @@
 /**
- * triggers.ts
- *
- * Centralised trigger configuration for decision and responsibility extraction.
- *
- * Extend these arrays/regexes to add new trigger patterns without modifying
- * the core extraction logic in decisionEngine.ts.
- *
- * Design constraints:
- * - No DB-driven triggers; all definitions are static config.
- * - All patterns are deterministic; no LLM calls.
- * - RegExp flags are baked in — never change flags without reviewing all callers.
+ * Trigger definitions for extraction.
  */
 
-// ─── Decision triggers ─────────────────────────────────────────────────────────
+// Decision triggers
 
-/**
- * Phrases that signal a confirmed, final decision.
- * Matched case-insensitively against the lowercased message text.
- */
+/** Final decision phrases. */
 export const DECISION_FINAL_TRIGGERS: string[] = [
-  // Direct declaration
+  // Direct
   "final decision",
   "we decided",
   "it's decided",
@@ -36,20 +23,20 @@ export const DECISION_FINAL_TRIGGERS: string[] = [
   "confirmed,",
   "it's confirmed",
   "ok confirmed",
-  // Agreement & approval
+  // Agreement
   "approved",
   "we approved",
   "all agreed",
   "everyone agreed",
   "we all agreed",
-  // Locked / finalized
+  // Locked
   "locked in",
   "lock it in",
   "finalized",
   "finalised",
   "we finalized",
   "we finalised",
-  // Settlement
+  // Settled
   "that's settled",
   "settled then",
   "settled.",
@@ -57,7 +44,7 @@ export const DECISION_FINAL_TRIGGERS: string[] = [
   "it's a deal",
   "deal.",
   "deal!",
-  // Selection locked in
+  // Selected
   "go ahead with",
   "going ahead with",
   "we chose",
@@ -79,23 +66,20 @@ export const DECISION_FINAL_TRIGGERS: string[] = [
   "ok, decided",
   "ok decided",
   "alright, decided",
-  // Submission & deadlines
+  // Deadlines
   "submit by",
   "submit on",
   "submission by",
   "deadline is",
   "deadline set",
   "internal deadline",
-  // Emoji confirmation
+  // Emoji
   "✅",
 ];
 
-/**
- * Phrases that signal a tentative or proposed decision.
- * Matched case-insensitively against the lowercased message text.
- */
+/** Tentative decision phrases. */
 export const DECISION_TENTATIVE_TRIGGERS: string[] = [
-  // Direction setting
+  // Direction
   "let's go with",
   "lets go with",
   "we will go with",
@@ -116,7 +100,7 @@ export const DECISION_TENTATIVE_TRIGGERS: string[] = [
   "maybe we go with",
   "we should do",
   "we should use",
-  // Preference & voting
+  // Preference
   "i'd go with",
   "i'd say",
   "i'd suggest",
@@ -128,12 +112,12 @@ export const DECISION_TENTATIVE_TRIGGERS: string[] = [
   "going for",
   "thinking we",
   "thinking of going",
-  // Keeping / sticking
+  // Keep/stick
   "let's keep",
   "we'll keep",
   "sticking with",
   "let's stick with",
-  // Picking / choosing
+  // Pick/choose
   "let's pick",
   "we pick",
   "let's choose",
@@ -149,7 +133,7 @@ export const DECISION_TENTATIVE_TRIGGERS: string[] = [
   "agreed on",
   "we agreed on",
   "makes sense to go",
-  // Action direction
+  // Action
   "let's do",
   "let's use",
   "going with",
@@ -159,7 +143,7 @@ export const DECISION_TENTATIVE_TRIGGERS: string[] = [
   "ideally we",
   "moving forward with",
   "we move forward with",
-  // Imperative group decisions
+  // Imperative
   "we need to handle",
   "we need to support",
   "we need to fix",
@@ -173,97 +157,53 @@ export const DECISION_TENTATIVE_TRIGGERS: string[] = [
   "needs to happen",
   "has to happen",
   "must happen",
-  // Temporal decisions
+  // Time-based
   "complete by",
   "done by",
   "finish by",
   "ready by",
   "stable by",
-  // Deferral decisions
+  // Deferral
   "optional for now",
   "not for now",
   "skip for now",
   "not needed for now",
   "defer for now",
   "not needed yet",
-  // Feature freezes / scope locks
+  // Scope lock
   "no new features",
   "no feature creep",
   "no more features",
   "feature freeze",
 ];
 
-/**
- * Matches "option <single-letter>" only when a clear selection context exists.
- * Does NOT match standalone "option a/b" presentations without selection intent;
- * extraction callers are responsible for ensuring surrounding context is decision-like.
- *
- * Examples that match:  "we'll go with option b", "option a seems best"
- * Examples that do NOT: "we have two options: option a or option b"
- *   (the latter won't match a decision trigger phrase, so the option regex alone fires —
- *    this is intentional; see detectDecisionStatus in decisionEngine.ts)
- */
+/** Matches "option x". */
 export const OPTION_SELECT_RE = /\boption\s+[a-z]\b/i;
 
-/**
- * Short standalone messages that are pure finality/agreement with no other content.
- * Extremely common in WhatsApp: "Deal!", "Sorted", "Done ✓", etc.
- * Using a regex instead of phrases prevents matching substrings like "big deal" or "no deal".
- *
- * Examples that match:  "Deal!", "Sorted.", "Agreed", "Done ✓", "Perfect!"
- * Examples that do NOT: "big deal", "no deal", "done, we decided" (too long)
- */
+/** Standalone finality words. */
 export const DECISION_STANDALONE_RE =
   /^(deal|done|sorted|agreed|confirmed|perfect|sealed|set|settled)[!\s.✓✅]*$/i;
 
-// ─── Responsibility triggers ───────────────────────────────────────────────────
+// Responsibility triggers
 
-/**
- * Matches self-assignment: speaker commits to a task.
- * Tested against the original (non-lowercased) message text.
- * Examples: "I will send the report", "I'll handle this", "I'm going to sort this"
- */
+/** Self-assignment phrases. */
 export const RESP_SELF_RE =
   /\b(i will|i'll|i'm going to|i am going to|i can do|i'll take|let me|i'll do|i'll sort|i got it|i got this|i'll take care|leave it to me)\b/i;
 
-/**
- * Matches delegation to another participant.
- * Tested against the lowercased message text.
- * Examples: "can you review this?", "you will need to submit", "I need you to update"
- */
+/** Delegation phrases. */
 export const RESP_OTHER_RE =
   /\b(can you|you will|need you to|you need to|could you|would you|please ensure|are you able to)\b/i;
 
-/**
- * "please" ONLY triggers a responsibility when it is immediately followed
- * (within ≤3 intervening words) by a concrete action verb.
- *
- * This prevents polite conversational uses ("yes please", "please note",
- * "please let me know") from generating spurious responsibilities.
- *
- * Examples that match:
- *   "please send the report by Friday"
- *   "please review and confirm"
- *   "could you please complete this"
- *
- * Examples that do NOT match:
- *   "yes please"
- *   "please note that..."
- *   "please let me know" (let is not in the action list)
- */
+/** "please" + action pattern. */
 export const RESP_PLEASE_ACTION_RE =
   /\bplease\s+(?:\w+\s+){0,3}(send|complete|finish|review|update|check|fix|write|create|add|remove|submit|make|do|handle|take|get|set|ensure|confirm|prepare|share|upload|schedule|book|arrange|contact|follow|coordinate|test|deploy|build|run|implement|draft|collect|gather)\b/i;
 
-/**
- * High-signal standalone task phrases (excluding "please", which is handled by
- * RESP_PLEASE_ACTION_RE above).
- * Matched case-insensitively against the lowercased message text.
- */
+/** General task phrases. */
 export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
-  // Classic delegation
+  // Delegation
   "handle this",
   "take care of",
-  // Self + other commitment phrases
+  // Commitment
   "will do",
   "on it",
   "i'm on it",
@@ -282,13 +222,13 @@ export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
   "i will sort",
   "i will get",
   "i will make",
-  // Informal acknowledgements
+  // Informal
   "i got it",
   "i got this",
   "leave it to me",
   "no worries, i'll",
   "sure thing, i'll",
-  // Ownership & assignment
+  // Ownership
   "i'll manage",
   "i'll take it",
   "i'll be handling",
@@ -299,7 +239,7 @@ export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
   "action item",
   "your task",
   "your action",
-  // Task acknowledgement
+  // Acknowledgement
   "noted, i will",
   "noted, will",
   "sure, i'll",
@@ -308,81 +248,51 @@ export const RESP_GENERAL_TRIGGER_PHRASES: string[] = [
   "ok i'll",
   "alright i will",
   "alright i'll",
-  // Needs-doing phrases
+  // Needs doing
   "needs to be done",
   "has to be done",
   "needs to be submitted",
-  // Due + deadline variants
+  // Deadline words
   "need to be done by",
   "must be done by",
   "due on",
   "due by",
 ];
 
-/**
- * "deadline" ONLY triggers when the message also contains a task-action word,
- * indicating that the deadline is attached to a concrete deliverable rather
- * than a general discussion of timelines.
- */
+/** "deadline" with action word. */
 export const RESP_DEADLINE_RE = /\bdeadline\b/i;
 export const RESP_DEADLINE_ACTION_RE =
   /\b(by|before|until|submit|send|complete|finish|deliver)\b/i;
 
-/**
- * Fires when a message contains a specific date/day reference.
- * Must be paired with RESP_DATE_ACTION_RE to avoid flagging pure calendar chat.
- *
- * Examples that match (with action):  "Submit by Friday", "Done by 5pm tomorrow"
- * Examples that do NOT match alone:   "meeting on Monday" (no action word)
- */
+/** Date reference pattern. */
 export const RESP_DATE_RE =
   /\b(by|before|until|on)\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|tonight|next\s+week|end\s+of\s+(day|week|month)|eod|eow|\d{1,2}[\/\-]\d{1,2}|\d{1,2}(?:st|nd|rd|th))\b/i;
 
-/**
- * Action words that must co-occur with RESP_DATE_RE to confirm a responsibility.
- */
+/** Action words for date pattern. */
 export const RESP_DATE_ACTION_RE =
   /\b(send|submit|finish|complete|deliver|prepare|share|upload|book|confirm|review|fix|write|get|do|make|handle|check|call|meet|present)\b/i;
 
-// ─── Decision context patterns ─────────────────────────────────────────────────
+// Decision context patterns
 
-/**
- * "ok so" at message start — the speaker is summarising/confirming a decision.
- * Requires at least 10 chars of substance after "ok so" to avoid matching
- * throwaway uses like "ok so yeah".
- */
+/** "ok so" summary pattern. */
 export const DECISION_SUMMARY_RE = /^ok\s+so\s+\S.{10,}/i;
 
-/**
- * Decision-level confirmation emoji at end of a message.
- */
+/** Decision emoji at end. */
 export const DECISION_EMOJI_RE = /[✅✓☑✔]\s*$/;
 
-/**
- * Date reference (preposition + month + day) in a decision-level context.
- * Distinct from RESP_DATE_RE — detects the schedule decision itself,
- * not a task assignment.
- */
+/** Date reference for decisions. */
 export const DECISION_DATE_RE =
   /\b(by|before|until|on)\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}\b/i;
 
-/**
- * Action word that co-occurs with DECISION_DATE_RE to confirm a schedule decision.
- */
+/** Action words for decision date. */
 export const DECISION_ACTION_RE =
   /\b(submit|launch|deploy|release|ship|lock|freeze|complete|finish|deliver|stable|ready|live|due|deadline)\b/i;
 
-// ─── Agreement patterns (for context-window detection in decisionEngine) ────────
+// Agreement patterns
 
-/**
- * Short standalone messages that signal agreement / acknowledgment.
- * Anchored (^ … $) so they only match when the *entire* message is an
- * agreement word, not when agreement words appear inside longer statements.
- */
+/** Short agreement messages. */
 export const AGREEMENT_SHORT_RE =
   /^(ok|okay|alright|agreed|noted|yes|yep|yeah|yea|yup|works|sounds good|makes sense|cool|sure|fair enough|roger|perfect|fine|right|correct|exactly|bet|will do|on it|got it|good|nice|great|absolutely|definitely|for sure|true)[.!,✅👍🤝✔☑\s]*$/i;
 
-/**
- * Messages composed entirely of agreement / confirmation emoji.
- */
+/** Agreement emoji only. */
 export const AGREEMENT_EMOJI_RE = /^[👍✅🤝✔☑🫡👌💯🙌✓\s]+$/;

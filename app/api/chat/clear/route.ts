@@ -1,10 +1,7 @@
 /**
  * DELETE /api/chat/clear
- * Body JSON: { chat_id }
- *
- * Deletes all data for the given chat in reverse FK dependency order:
- *   decision_evidence → decisions → decision_threads
- *   import_messages → responsibilities → messages → chat_imports → chats
+ * Body: { chat_id }
+ * Clears all chat data.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -48,7 +45,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
 
-  // ── 1) Resolve thread IDs for this chat ─────────────────────────────────────
+  // Get thread IDs
   const { data: threadRows } = await db
     .from("decision_threads")
     .select("id")
@@ -58,7 +55,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     (r: { id: string }) => r.id,
   );
 
-  // ── 2) Delete decision_evidence via decisions in those threads ───────────────
+  // Delete decision evidence
   if (threadIds.length > 0) {
     const { data: decRows } = await db
       .from("decisions")
@@ -84,7 +81,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // ── 3) Delete decisions ────────────────────────────────────────────────────
+    // Delete decisions
     const { error: decErr } = await db
       .from("decisions")
       .delete()
@@ -98,7 +95,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── 4) Delete decision_threads ───────────────────────────────────────────────
+  // Delete decision threads
   {
     const { error } = await db
       .from("decision_threads")
@@ -116,7 +113,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── 5) Delete import_messages via chat_imports ───────────────────────────────
+  // Delete import links
   const { data: importRows } = await db
     .from("chat_imports")
     .select("id")
@@ -140,7 +137,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── 6) Delete responsibilities ───────────────────────────────────────────────
+  // Delete responsibilities
   {
     const { error } = await db
       .from("responsibilities")
@@ -158,7 +155,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── 7) Delete messages ───────────────────────────────────────────────────────
+  // Delete messages
   {
     const { error } = await db.from("messages").delete().eq("chat_id", chat_id);
     if (error) {
@@ -170,7 +167,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── 8) Delete chat_imports ───────────────────────────────────────────────────
+  // Delete imports
   {
     const { error } = await db
       .from("chat_imports")
@@ -185,7 +182,7 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── 9) Delete chat ───────────────────────────────────────────────────────────
+  // Delete chat
   {
     const { error } = await db.from("chats").delete().eq("id", chat_id);
     if (error) {

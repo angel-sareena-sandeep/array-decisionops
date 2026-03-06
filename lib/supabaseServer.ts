@@ -1,8 +1,5 @@
 /**
- * supabaseServer.ts
- *
- * SERVER-ONLY file. Do NOT import this from client components or browser code.
- * Provides an admin Supabase client using the service role key.
+ * Server-only Supabase admin client.
  */
 
 import { createClient, SupabaseClient } from "@supabase/supabase-js";

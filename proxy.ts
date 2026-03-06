@@ -1,33 +1,22 @@
 /**
- * proxy.ts
- *
- * Next.js proxy — runs on every request before reaching API routes or pages.
- *
- * Responsibilities:
- * 1. Security headers (CSP, HSTS, X-Frame-Options, etc.)
- * 2. Rate limiting on API routes
- * 3. Origin / CSRF validation on mutating API requests
- * 4. Request body size enforcement via Content-Length header
+ * App proxy for security and rate limits.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 
-// ─── Security headers ─────────────────────────────────────────────────────────
+// Security headers
 
 const SECURITY_HEADERS: Record<string, string> = {
-  /** Prevent clickjacking — only allow same-origin framing. */
+  /** Block clickjacking. */
   "X-Frame-Options": "DENY",
-  /** Block MIME-type sniffing. */
+  /** Block MIME sniffing. */
   "X-Content-Type-Options": "nosniff",
-  /** Referrer policy — send origin only on cross-origin requests. */
+  /** Referrer policy. */
   "Referrer-Policy": "strict-origin-when-cross-origin",
-  /** Disable browser features not needed. */
+  /** Disable unused browser features. */
   "Permissions-Policy":
     "camera=(), microphone=(), geolocation=(), browsing-topics=()",
-  /**
-   * Content Security Policy — strict, self-only with exceptions for fonts and styles.
-   * 'unsafe-inline' for styles is needed by Tailwind's runtime injection.
-   */
+  /** Content Security Policy. */
   "Content-Security-Policy": [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
@@ -39,16 +28,13 @@ const SECURITY_HEADERS: Record<string, string> = {
     "base-uri 'self'",
     "form-action 'self'",
   ].join("; "),
-  /**
-   * Strict Transport Security — force HTTPS for 1 year, include subdomains.
-   * Only effective when served over HTTPS (ignored on localhost).
-   */
+  /** Strict transport security. */
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
-  /** Don't advertise the framework. */
+  /** Disable DNS prefetch. */
   "X-DNS-Prefetch-Control": "off",
 };
 
-// ─── Rate limiting (in-memory, per-IP) ────────────────────────────────────────
+// Rate limiting
 
 type RLEntry = { timestamps: number[] };
 const rlStore = new Map<string, RLEntry>();
@@ -88,12 +74,12 @@ function rateLimit(
   return { limited: false };
 }
 
-// ─── Route → rate limit config ────────────────────────────────────────────────
+// Route rate limits
 
 type RLConfig = { limit: number; windowMs: number };
 
 function getRouteRateLimit(pathname: string, method: string): RLConfig | null {
-  // Only rate-limit API routes
+  // Only for API routes
   if (!pathname.startsWith("/api/")) return null;
 
   if (pathname.startsWith("/api/import/"))
@@ -102,22 +88,22 @@ function getRouteRateLimit(pathname: string, method: string): RLConfig | null {
   if (pathname.startsWith("/api/chat/clear"))
     return { limit: 5, windowMs: 60_000 };
   if (method === "PATCH") return { limit: 30, windowMs: 60_000 };
-  // Read endpoints (GET)
+  // Default read limit
   return { limit: 60, windowMs: 60_000 };
 }
 
-// ─── Max body sizes (bytes) per route ─────────────────────────────────────────
+// Body size limits
 
-/** 50 MB for file imports, 1 KB for other JSON bodies. */
+/** Body size by route. */
 function getMaxBodySize(pathname: string): number {
   if (pathname.startsWith("/api/import/")) return 50 * 1024 * 1024; // 50 MB
   return 1024 * 1024; // 1 MB for other API routes
 }
 
-// ─── IP extraction ────────────────────────────────────────────────────────────
+// IP helper
 
 function getClientIP(req: NextRequest): string {
-  // Vercel / common proxy headers
+  // Common proxy headers
   return (
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     req.headers.get("x-real-ip") ||
@@ -125,13 +111,13 @@ function getClientIP(req: NextRequest): string {
   );
 }
 
-// ─── Proxy ────────────────────────────────────────────────────────────────────
+// Proxy
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const method = req.method;
 
-  // ── 1) Rate limiting for API routes ─────────────────────────────────────────
+  // Rate limiting
   if (pathname.startsWith("/api/")) {
     const rlConfig = getRouteRateLimit(pathname, method);
     if (rlConfig) {
@@ -155,7 +141,7 @@ export function proxy(req: NextRequest) {
       }
     }
 
-    // ── 2) Body size enforcement (Content-Length header) ───────────────────────
+    // Body size check
     const contentLength = req.headers.get("content-length");
     if (contentLength) {
       const maxSize = getMaxBodySize(pathname);
@@ -176,7 +162,7 @@ export function proxy(req: NextRequest) {
       }
     }
 
-    // ── 3) CSRF / Origin validation for mutating requests ─────────────────────
+    // Origin check
     if (
       method === "POST" ||
       method === "PATCH" ||
@@ -186,8 +172,7 @@ export function proxy(req: NextRequest) {
       const origin = req.headers.get("origin");
       const host = req.headers.get("host");
 
-      // In production, require that the Origin header matches the Host.
-      // Allow missing origin (e.g. server-to-server, curl) only in development.
+      // Require matching origin and host
       if (origin && host) {
         try {
           const originHost = new URL(origin).host;
@@ -221,26 +206,20 @@ export function proxy(req: NextRequest) {
     }
   }
 
-  // ── 4) Add security headers to all responses ───────────────────────────────
+  // Add security headers
   const response = NextResponse.next();
   for (const [header, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(header, value);
   }
-  // Remove x-powered-by if present
+  // Remove x-powered-by
   response.headers.delete("x-powered-by");
   return response;
 }
 
-// Only run middleware on relevant paths (skip static files, _next)
+// Skip static/internal paths
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico, sitemap.xml, robots.txt (public metadata files)
-     * - Public assets (svg, png, jpg, etc.)
-     */
+    /* Exclude internal and static files. */
     "/((?!_next/static|_next/image|favicon\\.ico|sitemap\\.xml|robots\\.txt|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

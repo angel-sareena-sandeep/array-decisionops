@@ -17,7 +17,7 @@ export default function Sidebar() {
         <aside className="w-64 bg-[#112C70] rounded-3xl p-6 flex flex-col h-full overflow-y-auto shadow-[0_8px_40px_rgba(10,35,83,0.8)]">
             <div className="mb-8">
                 <Link href="/home" className="flex items-center">
-                    {/* Mobile: cube only */}
+                    {/* Mobile logo */}
                     <Image
                         src="/cube.svg"
                         alt="ARRAY"
@@ -26,7 +26,7 @@ export default function Sidebar() {
                         className="block sm:hidden"
                         priority
                     />
-                    {/* Tablet/Desktop: full logo with text */}
+                    {/* Desktop logo */}
                     <Image
                         src="/logo-full.png"
                         alt="ARRAY"

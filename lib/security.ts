@@ -1,11 +1,8 @@
 /**
- * lib/security.ts
- *
- * Security utilities: rate limiting, input validation, error sanitization.
- * SERVER-ONLY — do NOT import from client components.
+ * Security helpers.
  */
 
-// ─── Rate Limiter (sliding window, in-memory) ────────────────────────────────
+// Rate limiter
 
 type RateLimitEntry = {
   timestamps: number[];
@@ -13,7 +10,7 @@ type RateLimitEntry = {
 
 const rateLimitStore = new Map<string, RateLimitEntry>();
 
-/** Evict stale entries every 5 minutes to prevent memory leaks. */
+/** Cleanup interval. */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 let lastCleanup = Date.now();
@@ -30,13 +27,7 @@ function cleanupStaleEntries(windowMs: number) {
 }
 
 /**
- * Check if a request should be rate-limited.
- * Returns { limited: false } if allowed, or { limited: true, retryAfterSec }
- * if the caller has exceeded the limit.
- *
- * @param key    Unique key (e.g. IP + route)
- * @param limit  Max requests allowed in the window
- * @param windowMs  Window duration in milliseconds
+ * Checks if a key is rate-limited.
  */
 export function rateLimit(
   key: string,
@@ -54,7 +45,7 @@ export function rateLimit(
     rateLimitStore.set(key, entry);
   }
 
-  // Remove timestamps outside the window
+  // Keep timestamps in window
   entry.timestamps = entry.timestamps.filter((t) => t > cutoff);
 
   if (entry.timestamps.length >= limit) {
@@ -67,31 +58,31 @@ export function rateLimit(
   return { limited: false };
 }
 
-// ─── Input Validation ─────────────────────────────────────────────────────────
+// Input validation
 
-/** UUID v4 pattern (case-insensitive). */
+/** UUID pattern. */
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Validate a string is a valid UUID v4. */
+/** Validate UUID. */
 export function isValidUUID(value: string): boolean {
   return UUID_REGEX.test(value);
 }
 
-/** SHA-256 hex string pattern (64 lowercase hex chars). */
+/** SHA-256 hex pattern. */
 const SHA256_REGEX = /^[0-9a-f]{64}$/;
 
-/** Validate a string is a valid SHA-256 hex hash. */
+/** Validate SHA-256. */
 export function isValidSHA256(value: string): boolean {
   return SHA256_REGEX.test(value);
 }
 
-/** Max allowed lengths for user-provided string fields. */
+/** Max string lengths. */
 export const MAX_LENGTHS = {
   chat_name: 200,
   file_name: 255,
   file_sha256: 64,
-  /** 50 MB of text content — generous but prevents abuse. */
+  /** Max content size (50 MB). */
   content: 50 * 1024 * 1024,
   chat_id: 36,
   status: 20,
@@ -99,8 +90,7 @@ export const MAX_LENGTHS = {
 } as const;
 
 /**
- * Validate a string field: not empty, within max length.
- * Returns null if valid, or an error message string if invalid.
+ * Validate required string field.
  */
 export function validateStringField(
   name: string,
@@ -114,13 +104,10 @@ export function validateStringField(
   return null;
 }
 
-// ─── Error Sanitization ──────────────────────────────────────────────────────
+// Error sanitization
 
 /**
- * Sanitize an error message for client consumption.
- * Strips potentially sensitive information (table names, SQL details,
- * stack traces, API keys) and returns a generic message if the original
- * looks like an internal/DB error.
+ * Return safe error text for clients.
  */
 export function sanitizeErrorMessage(
   err: unknown,
@@ -130,7 +117,7 @@ export function sanitizeErrorMessage(
 
   const msg = err.message;
 
-  // If it looks like a DB/internal error, don't expose details
+  // Hide internal error details
   if (
     msg.includes("relation ") ||
     msg.includes("column ") ||
@@ -147,22 +134,22 @@ export function sanitizeErrorMessage(
     return fallback;
   }
 
-  // Truncate overly long messages
+  // Truncate long messages
   return msg.length > 300 ? msg.slice(0, 300) : msg;
 }
 
-// ─── Rate Limit Presets ──────────────────────────────────────────────────────
+// Rate-limit presets
 
-/** Rate limit presets per endpoint category. */
+/** Preset limits. */
 export const RATE_LIMITS = {
-  /** Import: 10 requests per minute per IP. */
+  /** Import endpoints. */
   import: { limit: 10, windowMs: 60_000 },
-  /** Enrich (LLM-calling): 5 requests per minute per IP. */
+  /** Enrich endpoints. */
   enrich: { limit: 5, windowMs: 60_000 },
-  /** Read endpoints: 60 requests per minute per IP. */
+  /** Read endpoints. */
   read: { limit: 60, windowMs: 60_000 },
-  /** Destructive endpoints (clear): 5 requests per minute per IP. */
+  /** Destructive endpoints. */
   destructive: { limit: 5, windowMs: 60_000 },
-  /** Write endpoints (PATCH): 30 requests per minute per IP. */
+  /** Write endpoints. */
   write: { limit: 30, windowMs: 60_000 },
 } as const;

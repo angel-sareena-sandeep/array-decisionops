@@ -1,12 +1,7 @@
 /**
  * POST /api/enrich
- * Body JSON: { chat_id }
- *
- * On-demand LLM enrichment for a chat that has already been imported.
- * Runs Gemini 2.0 Flash (→ Groq fallback) on the full chat message history
- * and merges any new decisions / responsibilities into the database.
- *
- * Designed to be triggered manually from the UI to conserve free-tier quota.
+ * Body: { chat_id }
+ * Runs enrichment for a chat.
  */
 
 import { NextRequest, NextResponse } from "next/server";

@@ -1,6 +1,6 @@
 /**
  * GET /api/dashboard/summary?chat_id=...
- * Returns dashboard summary stats for the given chat.
+ * Returns summary stats.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -34,7 +34,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Parallel batch 1: three independent queries ──────────────────────────
+  // Run first query batch
   const [latestImportRes, openRespRes, threadRes] = await Promise.all([
     supabase
       .from("chat_imports")
@@ -95,7 +95,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const duplicates_skipped_latest: number =
     latestImport?.duplicates_skipped ?? 0;
 
-  // ── Parallel batch 2: decision counts (depends on threadIds) ────────────
+  // Run second query batch
   let latest_decisions_count = 0;
   let v2_plus_count = 0;
   if (threadRows && threadRows.length > 0) {

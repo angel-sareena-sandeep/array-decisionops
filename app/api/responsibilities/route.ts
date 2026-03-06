@@ -1,6 +1,6 @@
 /**
- * GET /api/responsibilities?chat_id=...&q=...&status=...&owner=...
- * Returns ResponsibilityItem[] exactly matching /lib/contracts.ts.
+ * GET /api/responsibilities
+ * Returns ResponsibilityItem[].
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Build query ─────────────────────────────────────────────────────────────
+  // Build query
   let query = supabase
     .from("responsibilities")
     .select(
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json([] as ResponsibilityItem[]);
   }
 
-  // ── Batch-fetch msg_ts for all source messages ──────────────────────────────
+  // Fetch source messages
   type RespRow = {
     id: string;
     owner: string;
@@ -109,7 +109,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  // ── Map DB -> ResponsibilityItem ────────────────────────────────────────────
+  // Map DB rows
   let items: ResponsibilityItem[] = respRows.map((row) => {
     const srcMsg = row.source_message_id
       ? msgById[row.source_message_id]
@@ -130,7 +130,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     };
   });
 
-  // ── Apply in-code filters ───────────────────────────────────────────────────
+  // Apply filters
   if (q) {
     items = items.filter(
       (r) =>
@@ -146,8 +146,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 /**
  * PATCH /api/responsibilities
- * Body: { id: string; status: "Open" | "Completed" | "Overdue" }
- * Updates the status of a single responsibility row.
+ * Body: { id, status }
+ * Updates one row.
  */
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   let body: { id?: string; status?: string };

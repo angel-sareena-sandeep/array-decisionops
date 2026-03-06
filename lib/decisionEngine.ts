@@ -1,11 +1,5 @@
 /**
- * decisionEngine.ts
- *
- * Deterministic MVP extraction and persistence for decisions and responsibilities.
- * English-only triggers. No NLP date parsing.
- *
- * Trigger patterns are defined in ./triggers and can be extended without
- * modifying this file.
+ * Deterministic extraction and persistence engine.
  */
 
 import {
@@ -35,7 +29,7 @@ import {
   RESP_DATE_ACTION_RE,
 } from "./triggers";
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+// Types
 
 export type MessageInput = {
   sender: string;
@@ -54,7 +48,7 @@ export type ExtractResponsibilitiesResult = {
   evidenceByResponsibilityId: Record<string, string[]>;
 };
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// Helpers
 
 const CHUNK_SIZE = 500;
 
@@ -66,9 +60,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-/**
- * Converts a title to a URL-safe slug: lowercase alphanumeric + underscores, max 64 chars.
- */
+/** Convert title to slug. */
 function slugify(title: string): string {
   return title
     .toLowerCase()
@@ -77,21 +69,16 @@ function slugify(title: string): string {
     .slice(0, 64);
 }
 
-/**
- * Truncates a string to maxLen, adding ellipsis if needed.
- */
+/** Truncate text with ellipsis. */
 function truncate(text: string, maxLen: number): string {
   const t = text.trim();
   if (t.length <= maxLen) return t;
   return t.slice(0, maxLen - 1).trimEnd() + "…";
 }
 
-// ─── Decision extraction ───────────────────────────────────────────────────────
+// Decision extraction
 
-/**
- * Messages that should NEVER be treated as decisions even if they contain
- * trigger phrases.  Checked before trigger matching.
- */
+/** Exclusion patterns for false positives. */
 const QUESTION_RE = /\?\s*[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}]*\s*$/u;
 const STATUS_UPDATE_RE =
   /^(blocker|checkin|check-in|update|status|progress)[:\s]/i;
@@ -99,12 +86,7 @@ const PERSONAL_ACTION_RE =
   /^(ok\s+)?(i'm muting|i have class|im going|i'm going|brb|gtg|gotta go|muting|afk)/i;
 const BULLET_RE = /^[-\u2022*]\s/;
 
-/**
- * Detects \"meta-language\" \u2014 messages that TALK ABOUT keywords/phrases
- * rather than using them as actual decisions or commitments.
- * e.g. 'decision detection keywords: final, decided, we will, deadline, submit by'
- *      'sometimes \"i can do it\"'
- */
+/** Detects meta-language about triggers. */
 const META_LIST_RE =
   /\b(keywords?|triggers?|phrases?|examples?|patterns?)[:\s].*,.*,/i;
 const META_QUOTE_RE =
@@ -131,11 +113,11 @@ function detectDecisionStatus(
     if (lower.includes(trigger)) return "Tentative";
   }
   if (OPTION_SELECT_RE.test(lower)) return "Tentative";
-  // "ok so ..." summary pattern → speaker is confirming a decision
+  // Summary pattern
   if (DECISION_SUMMARY_RE.test(original)) return "Tentative";
-  // Confirmation emoji (✅, ✓, etc.) at end of message
+  // Confirmation emoji
   if (DECISION_EMOJI_RE.test(original)) return "Tentative";
-  // Date reference + delivery/submission action word → schedule decision
+  // Date + action pattern
   if (DECISION_DATE_RE.test(lower) && DECISION_ACTION_RE.test(lower))
     return "Tentative";
   return null;
@@ -151,17 +133,13 @@ function buildDecisionExplanation(msg: MessageInput): string {
   return truncate(`Decision based on: "${line}"`, 200);
 }
 
-// ─── Context-window helpers ───────────────────────────────────────────────────────────
+// Context-window helpers
 
 const GREETING_RE =
   /^(gm|morning|hi|hello|hey|bye|lol|haha|hahaha|same|ok|yes|no|yep|nah|stop|brb|back|end)[!.\s😭😂🤣]*$/i;
 const MEDIA_RE = /<[Mm]edia omitted>/;
 
-/**
- * Returns true when a message is long / complex enough to plausibly contain
- * a decision statement.  Excludes greetings, reactions, media, questions,
- * status updates, personal actions, bullet lists, and meta-language.
- */
+/** Check if message is substantive. */
 function isSubstantive(text: string): boolean {
   if (text.length < 15) return false;
   if (GREETING_RE.test(text)) return false;
@@ -171,18 +149,12 @@ function isSubstantive(text: string): boolean {
   return true;
 }
 
-/**
- * Returns true when a message is a short agreement / acknowledgment response.
- */
+/** Check short agreement message. */
 function isAgreement(text: string): boolean {
   return AGREEMENT_SHORT_RE.test(text) || AGREEMENT_EMOJI_RE.test(text);
 }
 
-/**
- * Returns true when a message contains language that is adjacent to a
- * decision (dates, imperative verbs, deadline words, etc.).
- * Used to lower the agreement threshold in the context window from 2 → 1.
- */
+/** Check decision-adjacent language. */
 function isDecisionAdjacent(text: string): boolean {
   const lower = text.toLowerCase();
   if (DECISION_DATE_RE.test(lower)) return true;
@@ -215,7 +187,7 @@ export function extractDecisions(
     const title = buildDecisionTitle(msg);
     const id = "dec_" + generateHash("decision|" + title).slice(0, 12);
 
-    // Skip exact duplicate IDs within the same run
+    // Skip duplicate IDs in this run
     if (seenIds.has(id)) continue;
     seenIds.add(id);
 
@@ -236,9 +208,8 @@ export function extractDecisions(
     evidenceByDecisionId[id] = [msg.message_hash];
   }
 
-  // ── Second pass: context-window agreement detection ────────────────────────
-  // When a substantive message is followed by short agreements from
-  // different senders within the next 4 messages, treat it as a decision.
+  // Second pass: context-window agreement detection
+  // Use nearby agreements from other senders
   const capturedHashes = new Set(Object.values(evidenceByDecisionId).flat());
 
   for (let i = 0; i < messages.length; i++) {
@@ -264,10 +235,7 @@ export function extractDecisions(
       }
     }
 
-    // 2+ agreements from different people → likely a decision.
-    // 1 agreement is enough when the message itself contains decision-like language.
-    // Always require decision-adjacent content to avoid catching pure
-    // status updates and meta-discussion.
+    // Require enough agreement signals
     if (!isDecisionAdjacent(text) && agreements < 2) continue;
     const needed = isDecisionAdjacent(text) ? 1 : 2;
     if (agreements >= needed) {
@@ -293,25 +261,25 @@ export function extractDecisions(
   return { items, evidenceByDecisionId };
 }
 
-// ─── Responsibility extraction ─────────────────────────────────────────────────
+// Responsibility extraction
 
 function detectResponsibilityTrigger(lower: string, original: string): boolean {
-  // Skip meta-language: messages that list or quote trigger phrases
+  // Skip meta-language
   if (META_LIST_RE.test(original)) return false;
   if (META_QUOTE_RE.test(original)) return false;
 
   if (RESP_SELF_RE.test(original)) return true;
   if (RESP_OTHER_RE.test(lower)) return true;
-  // "please" only fires when followed closely by a concrete action verb
+  // "please" must be near an action verb
   if (RESP_PLEASE_ACTION_RE.test(original)) return true;
   for (const phrase of RESP_GENERAL_TRIGGER_PHRASES) {
     if (lower.includes(phrase)) return true;
   }
-  // "deadline" only when task-like
+  // "deadline" only with task language
   if (RESP_DEADLINE_RE.test(lower) && RESP_DEADLINE_ACTION_RE.test(lower)) {
     return true;
   }
-  // Date reference + action word: "Submit by Friday", "Done by tomorrow"
+  // Date + action pattern
   if (RESP_DATE_RE.test(lower) && RESP_DATE_ACTION_RE.test(lower)) {
     return true;
   }
@@ -364,16 +332,14 @@ export function extractResponsibilities(
   return { items, evidenceByResponsibilityId };
 }
 
-// ─── Persist decisions ─────────────────────────────────────────────────────────
+// Persist decisions
 
 export async function persistDecisions(args: {
   supabase: unknown;
   chat_id: string;
   decisions: DecisionItem[];
   evidenceByDecisionId: Record<string, string[]>;
-  /** When true, existing decisions are updated in-place (same version) rather
-   *  than creating a new version. Used by LLM enrichment so polishing a title
-   *  doesn't produce a spurious v2. */
+  /** If true, update in place during enrichment. */
   enrichment?: boolean;
 }): Promise<{
   threads_inserted: number;
@@ -388,7 +354,7 @@ export async function persistDecisions(args: {
     return { threads_inserted: 0, decisions_inserted: 0, evidence_inserted: 0 };
   }
 
-  // ── Batch 1: Resolve all unique thread_keys upfront ─────────────────────
+  // Batch 1: resolve thread keys
   const decToKey = new Map<string, string>();
   for (const dec of decisions) {
     const key =
@@ -411,7 +377,7 @@ export async function persistDecisions(args: {
     }
   }
 
-  // Insert missing threads in one batch
+  // Insert missing threads
   const missingKeys = uniqueKeys.filter((k) => !threadByKey[k]);
   let threads_inserted = 0;
   if (missingKeys.length > 0) {
@@ -427,7 +393,7 @@ export async function persistDecisions(args: {
     }
   }
 
-  // ── Batch 2: Fetch latest version per thread in one query ───────────────
+  // Batch 2: fetch latest versions
   const allThreadIds = [...new Set(Object.values(threadByKey))];
   const latestByThread: Record<
     string,
@@ -460,7 +426,7 @@ export async function persistDecisions(args: {
         confidence: number;
         final_outcome: string | null;
       }[]) {
-        // Keep only the latest version per thread (first seen since ordered desc)
+        // Keep latest per thread
         if (!latestByThread[d.thread_id]) {
           latestByThread[d.thread_id] = d;
         }
@@ -468,7 +434,7 @@ export async function persistDecisions(args: {
     }
   }
 
-  // ── Batch 3: Resolve all evidence hashes → message IDs in one query ─────
+  // Batch 3: resolve evidence hashes
   const allEvHashes = [...new Set(Object.values(evidenceByDecisionId).flat())];
   const msgByHash: Record<string, string> = {};
 
@@ -487,7 +453,7 @@ export async function persistDecisions(args: {
     }
   }
 
-  // ── Build decision inserts / updates and evidence rows in memory ────────
+  // Build inserts/updates in memory
   const decisionInserts: Array<{
     thread_id: string;
     version_no: number;
@@ -499,7 +465,7 @@ export async function persistDecisions(args: {
   }> = [];
   const insertIndexToDecId: string[] = [];
 
-  // Enrichment-mode: collect UPDATEs for existing rows instead of inserting v2
+  // Enrichment updates instead of v2 inserts
   const decisionUpdates: Array<{
     existingDecisionId: string;
     decId: string; // original dec.id for evidence linking
@@ -523,10 +489,10 @@ export async function persistDecisions(args: {
         latest.status === dec.status &&
         latest.confidence === dec.confidence &&
         (latest.final_outcome ?? "") === (dec.explanation ?? "");
-      if (same) continue; // identical content already stored
+      if (same) continue; // already stored
 
       if (enrichment) {
-        // Enrichment mode: update the existing row in-place (no version bump)
+        // Enrichment mode update
         decisionUpdates.push({
           existingDecisionId: latest.id,
           decId: dec.id,
@@ -539,7 +505,7 @@ export async function persistDecisions(args: {
         continue;
       }
 
-      // Normal import: content changed → new version
+      // Normal import: insert new version
       insertIndexToDecId.push(dec.id);
       decisionInserts.push({
         thread_id,
@@ -551,7 +517,7 @@ export async function persistDecisions(args: {
         decided_at: dec.timestamp ?? null,
       });
     } else {
-      // New thread — always insert v1
+      // New thread: insert v1
       insertIndexToDecId.push(dec.id);
       decisionInserts.push({
         thread_id,
@@ -568,7 +534,7 @@ export async function persistDecisions(args: {
   let decisions_inserted = 0;
   let evidence_inserted = 0;
 
-  // ── Batch 4a: Enrichment updates (update existing rows in-place) ────────
+  // Batch 4a: enrichment updates
   if (decisionUpdates.length > 0) {
     for (const upd of decisionUpdates) {
       await db
@@ -582,7 +548,7 @@ export async function persistDecisions(args: {
         })
         .eq("id", upd.existingDecisionId);
 
-      // Replace evidence: delete old links, insert new
+      // Replace evidence links
       await db
         .from("decision_evidence")
         .delete()
@@ -605,7 +571,7 @@ export async function persistDecisions(args: {
     decisions_inserted += decisionUpdates.length;
   }
 
-  // ── Batch 4b: Insert genuinely new decisions ────────────────────────────
+  // Batch 4b: insert new decisions
   if (decisionInserts.length > 0) {
     const { data: decRows, error: decErr } = await db
       .from("decisions")
@@ -619,7 +585,7 @@ export async function persistDecisions(args: {
 
     decisions_inserted += decRows.length;
 
-    // ── Batch 5: Insert all evidence rows at once ─────────────────────────
+    // Batch 5: insert evidence rows
     const allEvidenceRows: Array<{
       decision_id: string;
       message_id: string;
@@ -651,7 +617,7 @@ export async function persistDecisions(args: {
   return { threads_inserted, decisions_inserted, evidence_inserted };
 }
 
-// ─── Persist responsibilities ──────────────────────────────────────────────────
+// Persist responsibilities
 
 export async function persistResponsibilities(args: {
   supabase: unknown;
@@ -665,7 +631,7 @@ export async function persistResponsibilities(args: {
 
   if (responsibilities.length === 0) return { inserted: 0 };
 
-  // ── Batch 1: Resolve all evidence hashes → message IDs in one query ─────
+  // Batch 1: resolve evidence hashes
   const allHashes = [
     ...new Set(Object.values(evidenceByResponsibilityId).flat()),
   ];
@@ -686,7 +652,7 @@ export async function persistResponsibilities(args: {
     }
   }
 
-  // ── Batch 2: Fetch all existing responsibilities for dedup ──────────────
+  // Batch 2: load existing responsibilities
   const { data: existingResps } = await db
     .from("responsibilities")
     .select("owner, task_text")
@@ -699,7 +665,7 @@ export async function persistResponsibilities(args: {
     }
   }
 
-  // ── Build insert rows in memory, skipping duplicates ────────────────────
+  // Build insert rows and skip duplicates
   const insertRows: Array<{
     chat_id: string;
     owner: string;
@@ -715,7 +681,7 @@ export async function persistResponsibilities(args: {
     const dedupKey = resp.owner + "\0" + task_text;
 
     if (existingKeys.has(dedupKey)) continue;
-    existingKeys.add(dedupKey); // prevent intra-batch duplicates
+    existingKeys.add(dedupKey); // prevent batch duplicates
 
     const hashes = evidenceByResponsibilityId[resp.id] ?? [];
     const source_message_id =
@@ -731,7 +697,7 @@ export async function persistResponsibilities(args: {
     });
   }
 
-  // ── Batch 3: Insert all at once ─────────────────────────────────────────
+  // Batch 3: insert rows
   let inserted = 0;
   if (insertRows.length > 0) {
     for (const chunk of chunkArray(insertRows, CHUNK_SIZE)) {

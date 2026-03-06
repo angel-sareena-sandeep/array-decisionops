@@ -1,8 +1,5 @@
 /**
- * sync.ts
- *
- * Syncs a WhatsApp chat export into the Supabase database.
- * Insert order: chats -> chat_imports -> messages -> import_messages
+ * Sync WhatsApp import data.
  */
 
 import { parseChat } from "./parser";
@@ -11,8 +8,8 @@ export type SyncResult = {
   chat_id: string;
   import_id: string;
   total_parsed: number;
-  inserted_messages: number; // best-effort
-  linked_import_messages: number; // best-effort
+  inserted_messages: number; // best effort
+  linked_import_messages: number; // best effort
 };
 
 const CHUNK_SIZE = 500;
@@ -36,7 +33,7 @@ export async function syncWhatsAppImport(args: {
   const db = args.supabase as any;
   const { chat_name, file_name, file_sha256, content } = args;
 
-  // ── 1) Find or create chat ──────────────────────────────────────────────────
+  // Find or create chat
   const chat_key = chat_name.trim().toLowerCase();
 
   let { data: chatRow } = await db
@@ -61,9 +58,8 @@ export async function syncWhatsAppImport(args: {
 
   const chat_id: string = chatRow.id;
 
-  // ── 2) Find or create chat_import ────────────────────────────────────────────
-  // On re-import of the same file, a unique constraint on file_sha256 means the
-  // insert returns null data. Fall back to selecting the existing row.
+  // Find or create chat import
+  // Re-import may return null insert data
   let { data: importRow } = await db
     .from("chat_imports")
     .insert({ chat_id, source: "whatsapp_txt", file_name, file_sha256 })
@@ -88,7 +84,7 @@ export async function syncWhatsAppImport(args: {
 
   const import_id: string = importRow.id;
 
-  // ── 3) Insert messages (dedupe via ON CONFLICT DO NOTHING) ──────────────────
+  // Insert messages with dedupe
   const parsed = parseChat(content);
 
   const messageRows = parsed.map((m) => ({
@@ -116,8 +112,8 @@ export async function syncWhatsAppImport(args: {
     inserted_messages += data?.length ?? 0;
   }
 
-  // ── 4) Insert import_messages ───────────────────────────────────────────────
-  // Fetch ALL message IDs in one batched query, then link in one upsert.
+  // Insert import-message links
+  // Fetch IDs in batches and upsert links
   const allHashes = parsed.map((m) => m.message_hash);
   let linked_import_messages = 0;
 
@@ -147,7 +143,7 @@ export async function syncWhatsAppImport(args: {
     linked_import_messages = allMsgIds.length;
   }
 
-  // ── 5) Update chat_imports stats ──────────────────────────────────────────
+  // Update import stats
   await db
     .from("chat_imports")
     .update({

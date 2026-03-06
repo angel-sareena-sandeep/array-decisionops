@@ -1,20 +1,12 @@
 /**
- * lib/llm.ts
- *
- * LLM integration for decision and responsibility extraction.
- * Primary:  OpenRouter — arcee-ai/trinity-large-preview:free (131K context, free tier).
- * Fallback: Groq — llama-3.3-70b-versatile (OpenAI-compatible, no billing required).
- * Uses native fetch — no additional npm dependencies.
- *
- * The only export consumed by orchestrate.ts is runLLMOnMessages().
- * Everything else is internal.
+ * LLM integration helpers.
  */
 
 import { MessageInput } from "./decisionEngine";
 
-// ─── Output types ───────────────────────────────────────────────────────────
+// Output types
 
-/** A previously-tracked decision passed to the LLM so it can reuse thread_keys. */
+/** Existing decision context for thread reuse. */
 export type ExistingDecision = {
   thread_key: string;
   title: string;
@@ -22,31 +14,31 @@ export type ExistingDecision = {
 };
 
 export type LLMDecision = {
-  /** URL-safe slug that groups related messages into the same decision thread. */
+  /** Decision thread key. */
   thread_key: string;
-  /** Concise decision title, ≤80 chars. */
+  /** Decision title. */
   title: string;
   status: "Final" | "Tentative";
-  /** 0–100. Higher = more definitive language. */
+  /** Confidence 0-100. */
   confidence: number;
-  /** Why this is a decision, ≤200 chars. */
+  /** Short explanation. */
   explanation: string;
-  /** ISO timestamp of the source message. */
+  /** Source timestamp (ISO). */
   decided_at: string;
-  /** msg_sha256 values from input messages used as evidence. */
+  /** Evidence message hashes. */
   evidence_hashes: string[];
 };
 
 export type LLMResponsibility = {
-  /** Task description, ≤80 chars. */
+  /** Task title. */
   title: string;
-  /** Exact sender name, or "unassigned". */
+  /** Owner or "unassigned". */
   owner: string;
-  /** YYYY-MM-DD parsed from natural language, or "". */
+  /** Due date or empty. */
   due: string;
-  /** 1–2 sentence summary of the task. */
+  /** Short task description. */
   description: string;
-  /** Single msg_sha256 from the input messages. */
+  /** Evidence hash. */
   evidence_hash: string;
 };
 
@@ -58,11 +50,11 @@ export type LLMChunkResult = {
 export type LLMOutput = {
   decisions: LLMDecision[];
   responsibilities: LLMResponsibility[];
-  /** Which provider succeeded. null = both failed, deterministic-only mode. */
+  /** Provider used, or null on failure. */
   provider: "openrouter" | "groq" | null;
 };
 
-// ─── System prompt ────────────────────────────────────────────────────────────
+// System prompt
 
 const SYSTEM_PROMPT = `You are an AI that IMPROVES and ENRICHES decisions and responsibilities extracted from a WhatsApp group chat by a rules-based system.
 
@@ -158,7 +150,7 @@ NEVER invent a new thread_key for a topic that already exists — that creates a
 
 No results? Return exactly: {"decisions":[],"responsibilities":[]}`;
 
-// ─── Prompt builder ───────────────────────────────────────────────────────────
+// Prompt builder
 
 export type PromptBuild = {
   systemPrompt: string;
@@ -166,11 +158,7 @@ export type PromptBuild = {
   idToHash: Record<string, string>;
 };
 
-/**
- * Builds the LLM prompt.
- * Sends draft decisions/responsibilities from the deterministic engine
- * along with the chat messages so the LLM can improve them.
- */
+/** Build prompt payload and hash map. */
 export function buildPrompt(
   chunk: MessageInput[],
   draftDecisions: Array<{
@@ -196,7 +184,7 @@ export function buildPrompt(
     return { id, sender: m.sender, text: m.message_text, ts: m.timestamp };
   });
 
-  // Convert draft evidence hashes (sha256) to short ids (m000…)
+  // Map evidence hashes to short IDs
   const draftsWithShortIds = draftDecisions.map((d) => ({
     ...d,
     evidence_hashes: d.evidence_hashes.map((h) => hashToId[h] ?? h),
@@ -222,17 +210,13 @@ export function buildPrompt(
   };
 }
 
-// ─── JSON validation ──────────────────────────────────────────────────────────
+// JSON validation
 
 function isString(v: unknown): v is string {
   return typeof v === "string";
 }
 
-/**
- * Validates and sanitizes a raw parsed JSON object into a safe LLMChunkResult.
- * Drops malformed items rather than throwing — a partial result is better than nothing.
- * `idToHash` maps short sequential IDs (m000, m001…) back to real msg_sha256 hashes.
- */
+/** Validate raw model JSON into safe output. */
 export function validateLLMResult(
   raw: unknown,
   idToHash: Record<string, string> = {},
@@ -304,7 +288,7 @@ export function validateLLMResult(
 }
 
 function extractJSON(text: string): unknown {
-  // Strip markdown fences if the model wraps output despite instructions
+  // Remove optional markdown fences
   const stripped = text
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```\s*$/, "")
@@ -312,32 +296,28 @@ function extractJSON(text: string): unknown {
   return JSON.parse(stripped);
 }
 
-// ─── Timeout helpers ──────────────────────────────────────────────────────────
+// Timeout helpers
 
-/** Base timeout for LLM requests (small chats). */
+/** Base timeout. */
 const BASE_TIMEOUT_MS = 60_000;
-/** Extra time granted per 100 messages in the chunk. */
+/** Extra time per 100 messages. */
 const TIMEOUT_PER_100_MSGS_MS = 15_000;
-/** Absolute ceiling — no single LLM call waits longer than this. */
+/** Max timeout. */
 const MAX_TIMEOUT_MS = 180_000;
 
-/** Returns a deadline in ms that scales with the number of messages. */
+/** Compute timeout from message count. */
 function computeTimeout(messageCount: number): number {
   const scaled =
     BASE_TIMEOUT_MS + Math.ceil(messageCount / 100) * TIMEOUT_PER_100_MSGS_MS;
   return Math.min(scaled, MAX_TIMEOUT_MS);
 }
 
-// ─── Retry helpers ────────────────────────────────────────────────────────────
+// Retry helpers
 
 const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/**
- * Retries `fn` up to `maxAttempts` times when it throws an error whose message
- * contains "429".  Reads a `Retry-After` (seconds) value from the thrown
- * message if present; otherwise uses exponential back-off starting at 8 s.
- */
+/** Retry on 429 with backoff. */
 async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -346,12 +326,12 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
     } catch (err) {
       lastErr = err;
       const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("429")) throw err; // non-rate-limit error — don't retry
-      // Try to honour the Retry-After header value embedded in the error message
+      if (!msg.includes("429")) throw err; // non-rate-limit error
+      // Use Retry-After when present
       const retryAfterMatch = msg.match(/"retryAfter"\s*:\s*(\d+)/i);
       const waitMs = retryAfterMatch
         ? parseInt(retryAfterMatch[1], 10) * 1_000 + 500
-        : 8_000 * 2 ** attempt; // 8 s, 16 s, 32 s
+        : 8_000 * 2 ** attempt; // backoff
       console.warn(
         `llm: 429 rate limit (attempt ${attempt + 1}/${maxAttempts}), waiting ${waitMs / 1_000}s…`,
       );
@@ -361,7 +341,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
   throw lastErr;
 }
 
-// ─── API callers ──────────────────────────────────────────────────────────────
+// API callers
 
 async function callOpenRouter(
   systemPrompt: string,
@@ -487,19 +467,9 @@ async function callGroq(
   return validated;
 }
 
-// ─── Fallback chain ───────────────────────────────────────────────────────────
+// Fallback chain
 
-/**
- * Tries OpenRouter first, then Groq as fallback.
- * Each call gets its own AbortController so the HTTP connection is killed on
- * timeout — no zombie response can arrive after the fallback wins.
- *
- * `failed` is a shared Set across chunks — if a provider hard-fails once,
- * it is added to `failed` and skipped for all remaining chunks.
- *
- * `messageCount` drives a dynamic timeout: small chats get 30 s, large chats
- * scale up (+10 s per 100 messages) capped at 120 s.
- */
+/** Try OpenRouter first, then Groq. */
 async function callWithFallback(
   systemPrompt: string,
   userContent: string,
@@ -554,31 +524,18 @@ async function callWithFallback(
   return null;
 }
 
-// ─── Main entry point ─────────────────────────────────────────────────────────
+// Main entry point
 
-/**
- * Chats at or below this size are sent in a single LLM call to conserve
- * free-tier request quotas.
- * Above this threshold the messages are split into chunks.
- */
+/** Use one call at or below this size. */
 const SINGLE_CALL_THRESHOLD = 700;
 
-/** Messages per chunk when the chat exceeds SINGLE_CALL_THRESHOLD. */
+/** Chunk size above threshold. */
 const LLM_CHUNK_SIZE = 200;
 
-/** Pause between consecutive chunk calls to avoid RPM quota exhaustion. */
+/** Delay between chunk calls. */
 const INTER_CHUNK_DELAY_MS = 3_000;
 
-/**
- * Runs the LLM extraction pipeline over all messages.
- *
- * Strategy:
- *   ≤ SINGLE_CALL_THRESHOLD messages → one API call (conserves free-tier quota)
- *   >  SINGLE_CALL_THRESHOLD messages → sequential chunks of LLM_CHUNK_SIZE
- *
- * Returns combined decisions + responsibilities + which provider was used.
- * Returns provider=null if all providers failed (deterministic-only mode).
- */
+/** Run LLM extraction for all messages. */
 export async function runLLMOnMessages(
   messages: MessageInput[],
   draftDecisions: Array<{
@@ -598,12 +555,12 @@ export async function runLLMOnMessages(
   const allDecisions: LLMDecision[] = [];
   const allResponsibilities: LLMResponsibility[] = [];
   let provider: "openrouter" | "groq" | null = null;
-  /** Providers that have permanently failed — skip for all remaining chunks. */
+  /** Providers to skip after failure. */
   const failedProviders = new Set<string>();
 
   const chunks: MessageInput[][] =
     messages.length <= SINGLE_CALL_THRESHOLD
-      ? [messages] // single call — don't waste quota on small chats
+      ? [messages] // single call for small chats
       : Array.from(
           { length: Math.ceil(messages.length / LLM_CHUNK_SIZE) },
           (_, i) =>
@@ -611,7 +568,7 @@ export async function runLLMOnMessages(
         );
 
   for (let i = 0; i < chunks.length; i++) {
-    // All providers exhausted — no point processing remaining chunks
+    // Stop if all providers failed
     if (failedProviders.size >= 2) break;
 
     if (i > 0) await sleep(INTER_CHUNK_DELAY_MS);
@@ -630,7 +587,7 @@ export async function runLLMOnMessages(
       chunks[i].length,
     );
 
-    if (!outcome) continue; // both providers failed for this chunk — skip it
+    if (!outcome) continue; // skip failed chunk
 
     if (provider === null) provider = outcome.provider;
     allDecisions.push(...outcome.result.decisions);

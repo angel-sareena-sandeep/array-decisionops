@@ -1,16 +1,5 @@
 /**
- * lib/llmMerge.ts
- *
- * Pure merge logic — no DB access, no API calls, no side effects.
- *
- * Combines deterministic extraction results with LLM extraction results.
- *
- * Merge strategy:
- * - Match LLM items to deterministic items via evidence hash overlap.
- * - When matched: LLM wins on enrichment fields (title, confidence,
- *   status, explanation, owner, due, description, thread_key).
- * - Deterministic items with no LLM match are kept as-is (LLM missed them).
- * - Net-new LLM items (no deterministic match) are appended.
+ * Merge deterministic and LLM outputs.
  */
 
 import { DecisionItem, ResponsibilityItem } from "./contracts";
@@ -21,7 +10,7 @@ import {
 import { LLMDecision, LLMResponsibility } from "./llm";
 import { generateHash } from "./hash";
 
-// ─── Title similarity helper ──────────────────────────────────────────────────
+// Title similarity helper
 
 const STOP_WORDS = new Set([
   "the",
@@ -72,7 +61,7 @@ function significantWords(title: string): Set<string> {
   );
 }
 
-/** Returns true when both titles share ≥65% of the smaller title's significant words. */
+/** Check title similarity threshold. */
 function titlesAreDuplicates(a: string, b: string): boolean {
   const wa = significantWords(a);
   const wb = significantWords(b);
@@ -82,7 +71,7 @@ function titlesAreDuplicates(a: string, b: string): boolean {
   return overlap / Math.min(wa.size, wb.size) >= 0.65;
 }
 
-// ─── Decisions merge ──────────────────────────────────────────────────────────
+// Decision merge
 
 export function mergeDecisions(
   deterministic: ExtractDecisionsResult,
@@ -93,7 +82,7 @@ export function mergeDecisions(
   );
   if (llm.length === 0) return deterministic;
 
-  // Build reverse map: msg_sha256 → deterministic decision id
+  // Reverse map by evidence hash
   const hashToDetId: Record<string, string> = {};
   for (const [decId, hashes] of Object.entries(
     deterministic.evidenceByDecisionId,
@@ -103,7 +92,7 @@ export function mergeDecisions(
     }
   }
 
-  // Mutable working copies
+  // Working copies
   const itemsById: Record<string, DecisionItem & { thread_key?: string }> = {};
   for (const item of deterministic.items) {
     itemsById[item.id] = { ...item };
@@ -112,13 +101,11 @@ export function mergeDecisions(
     ...deterministic.evidenceByDecisionId,
   };
 
-  // Track which deterministic ids were enriched by the LLM.
-  // At the end we drop unmatched deterministic items — they have raw message
-  // text as titles (from buildDecisionTitle) which produces verbatim copies.
+  // Track deterministic items touched by LLM
   const matchedDetIds = new Set<string>();
 
   for (const llmDec of llm) {
-    // Find first overlapping deterministic decision
+    // Find overlap by evidence hash
     let matchedId: string | null = null;
     for (const h of llmDec.evidence_hashes) {
       if (hashToDetId[h]) {
@@ -128,7 +115,7 @@ export function mergeDecisions(
     }
 
     if (matchedId && itemsById[matchedId]) {
-      // Enrich the existing deterministic item with LLM quality fields
+      // Enrich matched item
       matchedDetIds.add(matchedId);
       itemsById[matchedId] = {
         ...itemsById[matchedId],
@@ -141,7 +128,7 @@ export function mergeDecisions(
         thread_key: llmDec.thread_key,
       };
     } else {
-      // Net-new LLM detection — stable id derived from thread_key
+      // Add net-new item
       const newId =
         "dec_" + generateHash("decision|" + llmDec.thread_key).slice(0, 12);
       if (!itemsById[newId]) {
@@ -165,8 +152,7 @@ export function mergeDecisions(
     `merge: matched=${matchedDetIds.size}, net-new=${Object.keys(itemsById).length - matchedDetIds.size}, dropping ${deterministic.items.length - matchedDetIds.size} unmatched deterministic`,
   );
 
-  // Drop any deterministic items the LLM didn't touch — they carry verbatim
-  // message text as titles. Only keep LLM-enriched items + net-new LLM items.
+  // Drop deterministic items not touched by LLM
   for (const item of deterministic.items) {
     if (!matchedDetIds.has(item.id)) {
       delete itemsById[item.id];
@@ -178,9 +164,7 @@ export function mergeDecisions(
     `merge: after drop+dedup = ${Object.keys(itemsById).length} decisions`,
   );
 
-  // Deduplicate by thread_key: if multiple items share the same thread_key
-  // (e.g. original decision + confirmation restatement both extracted), keep
-  // the one with the highest confidence and merge their evidence hashes.
+  // Dedupe by thread key
   const byThreadKey: Record<string, string[]> = {};
   for (const [id, item] of Object.entries(itemsById)) {
     const key =
@@ -190,7 +174,7 @@ export function mergeDecisions(
   }
   for (const ids of Object.values(byThreadKey)) {
     if (ids.length <= 1) continue;
-    // Keep the item with highest confidence
+    // Keep highest-confidence item
     ids.sort(
       (a, b) => (itemsById[b].confidence ?? 0) - (itemsById[a].confidence ?? 0),
     );
@@ -204,8 +188,7 @@ export function mergeDecisions(
     evidenceById[winnerId] = Array.from(mergedHashes);
   }
 
-  // Second-pass dedup: title similarity — catches cases where the LLM
-  // assigned different thread_keys to the same real-world decision.
+  // Second-pass dedupe by title similarity
   const allIds = Object.keys(itemsById);
   for (let i = 0; i < allIds.length; i++) {
     const idA = allIds[i];
@@ -215,7 +198,7 @@ export function mergeDecisions(
       if (!itemsById[idB]) continue;
       if (!titlesAreDuplicates(itemsById[idA].title, itemsById[idB].title))
         continue;
-      // Merge: keep higher-confidence item
+      // Merge and keep higher-confidence item
       const [winnerId, loserId] =
         (itemsById[idA].confidence ?? 0) >= (itemsById[idB].confidence ?? 0)
           ? [idA, idB]
@@ -240,7 +223,7 @@ export function mergeResponsibilities(
 ): ExtractResponsibilitiesResult {
   if (llm.length === 0) return deterministic;
 
-  // Build reverse map: msg_sha256 → deterministic responsibility id
+  // Reverse map by evidence hash
   const hashToRespId: Record<string, string> = {};
   for (const [respId, hashes] of Object.entries(
     deterministic.evidenceByResponsibilityId,
@@ -250,7 +233,7 @@ export function mergeResponsibilities(
     }
   }
 
-  // Mutable working copies
+  // Working copies
   const itemsById: Record<string, ResponsibilityItem> = {};
   for (const item of deterministic.items) {
     itemsById[item.id] = { ...item };
@@ -263,7 +246,7 @@ export function mergeResponsibilities(
     const matchedId = hashToRespId[llmResp.evidence_hash] ?? null;
 
     if (matchedId && itemsById[matchedId]) {
-      // Enrich the existing deterministic item with LLM quality fields
+      // Enrich matched item
       itemsById[matchedId] = {
         ...itemsById[matchedId],
         title: llmResp.title,
@@ -272,7 +255,7 @@ export function mergeResponsibilities(
         description: llmResp.description,
       };
     } else {
-      // Net-new LLM detection — stable id derived from evidence hash
+      // Add net-new item
       const newId =
         "resp_" + generateHash("resp|" + llmResp.evidence_hash).slice(0, 12);
       if (!itemsById[newId]) {
@@ -291,9 +274,7 @@ export function mergeResponsibilities(
     }
   }
 
-  // Deduplicate responsibilities by (owner + normalised title): if the LLM
-  // extracted the same action from different messages, keep the one with a
-  // non-empty due date, or fall back to the first.
+  // Dedupe by owner + normalized title
   const respByKey: Record<string, string[]> = {};
   for (const [id, item] of Object.entries(itemsById)) {
     const key = `${item.owner}|${item.title.toLowerCase().replace(/\s+/g, " ").trim()}`;
@@ -302,7 +283,7 @@ export function mergeResponsibilities(
   }
   for (const ids of Object.values(respByKey)) {
     if (ids.length <= 1) continue;
-    // Prefer item that has a due date
+    // Prefer item with due date
     ids.sort((a, b) => {
       const aDue = itemsById[a].due ? 1 : 0;
       const bDue = itemsById[b].due ? 1 : 0;
@@ -313,7 +294,7 @@ export function mergeResponsibilities(
       delete itemsById[loserId];
       delete evidenceById[loserId];
     }
-    // Merge evidence into winner
+    // Keep winner evidence
     const mergedHashes = new Set(evidenceById[winnerId] ?? []);
     evidenceById[winnerId] = Array.from(mergedHashes);
   }

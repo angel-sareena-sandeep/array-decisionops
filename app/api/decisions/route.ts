@@ -1,6 +1,6 @@
 /**
- * GET /api/decisions?chat_id=...&q=...&status=...&min_conf=...&max_conf=...&limit=...&offset=...
- * Returns DecisionItem[] exactly matching /lib/contracts.ts.
+ * GET /api/decisions
+ * Returns DecisionItem[].
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // ── Get decision_threads for this chat ──────────────────────────────────────
+    // Get thread IDs
     const { data: threadRows, error: threadErr } = await supabase
       .from("decision_threads")
       .select("id")
@@ -76,7 +76,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       (t) => t.id,
     );
 
-    // ── Get all decisions for those threads ordered by created_at desc ──────────
+    // Get decisions
     const { data: decRows, error: decErr } = await supabase
       .from("decisions")
       .select(
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json([] as DecisionItem[]);
     }
 
-    // ── Keep only the most recent decision per thread ───────────────────────────
+    // Keep latest per thread
     const latestByThread: Record<string, (typeof decRows)[0]> = {};
     for (const row of decRows as Array<{
       id: string;
@@ -117,7 +117,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // ── Map DB -> DecisionItem ──────────────────────────────────────────────────
+    // Map DB rows
     let items: DecisionItem[] = Object.values(latestByThread).map((row) => {
       const ts =
         (row as unknown as { decided_at: string | null }).decided_at ??
@@ -135,7 +135,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       };
     });
 
-    // ── Apply filters in code ───────────────────────────────────────────────────
+    // Apply filters
     if (q) {
       items = items.filter(
         (d) =>
@@ -150,17 +150,17 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       (d) => d.confidence >= minConf && d.confidence <= maxConf,
     );
 
-    // Sort by timestamp desc (already ordered but re-apply after filter)
+    // Sort by timestamp desc
     items.sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
 
-    // ── Pagination ──────────────────────────────────────────────────────────────
+    // Apply pagination
     items = items.slice(offset, offset + limit);
 
-    // ── Fetch evidence messages for the returned decisions ────────────────────
+    // Fetch evidence messages
     const decisionIds = items.map((d) => d.id);
     const evidenceByDecId: Record<string, EvidenceMessage[]> = {};
     if (decisionIds.length > 0) {
-      // Single query using Supabase foreign key join
+      // Single join query
       const { data: evRows } = await supabase
         .from("decision_evidence")
         .select("decision_id, messages(id, text, sender, msg_ts)")
@@ -182,7 +182,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    // Attach evidence sorted chronologically
+    // Attach sorted evidence
     items = items.map((d) => ({
       ...d,
       evidence: (evidenceByDecId[d.id] ?? []).sort((a, b) =>

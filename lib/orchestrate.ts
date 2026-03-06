@@ -1,20 +1,5 @@
 /**
- * orchestrate.ts
- *
- * Post-sync analysis pipeline for a completed WhatsApp import.
- *
- * After sync.ts persists chats → chat_imports → messages → import_messages,
- * this module:
- *   1. Fetches the message set for this import via import_messages → messages
- *      (so pre-existing deduped messages that were re-linked are included).
- *   2. Runs deterministic extraction (decisions + responsibilities).
- *   3. [Future slot] Optional LLM enrichment pass (not implemented yet).
- *   4. Persists results via decisionEngine (both persist functions are idempotent).
- *
- * Design constraints:
- * - No LLM calls. The slot comment below marks where they should be inserted.
- * - Persistence functions are not modified here; they remain reusable.
- * - Re-running against the same import_id is fully safe (idempotent).
+ * Analysis and enrichment orchestration.
  */
 
 import { SupabaseClient } from "@supabase/supabase-js";
@@ -29,7 +14,7 @@ import { runLLMOnMessages, ExistingDecision } from "./llm";
 import { DecisionItem, ResponsibilityItem } from "./contracts";
 import { generateHash } from "./hash";
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// Helpers
 
 async function fetchExistingDecisions(
   supabase: SupabaseClient,
@@ -77,7 +62,7 @@ function slugify(text: string): string {
     .slice(0, 64);
 }
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
+// Types
 
 export type AnalysisResult = {
   messages_analysed: number;
@@ -87,7 +72,7 @@ export type AnalysisResult = {
   responsibilities_new: number;
 };
 
-// ─── Chunking helper ──────────────────────────────────────────────────────────
+// Chunk helper
 
 const CHUNK_SIZE = 500;
 
@@ -99,17 +84,10 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-// ─── Main orchestration entry point ──────────────────────────────────────────
+// Main pipeline
 
 /**
- * Runs the full analysis pipeline for a completed import.
- *
- * Call this immediately after syncWhatsAppImport returns, passing the
- * chat_id and import_id from the sync result.
- *
- * Step 3 (LLM enrichment) is intentionally a no-op placeholder.
- * When LLM extraction is added, insert it between steps 2 and 4
- * without changing the persistence calls.
+ * Run analysis pipeline for one import.
  */
 export async function runAnalysisPipeline(args: {
   supabase: SupabaseClient;
@@ -118,10 +96,8 @@ export async function runAnalysisPipeline(args: {
 }): Promise<AnalysisResult> {
   const { supabase, chat_id, import_id } = args;
 
-  // ── Step 1: Fetch messages for this import from the DB ───────────────────
-  // Primary: messages linked to this specific import via import_messages.
-  // Fallback: all messages for the chat — guards against import_messages
-  // not being fully populated (e.g. all-duplicate second import edge cases).
+  // Step 1: fetch messages
+  // Use chat fallback when import links are empty
   let messages = await fetchImportMessages(supabase, import_id);
 
   if (messages.length === 0) {
@@ -138,11 +114,11 @@ export async function runAnalysisPipeline(args: {
     };
   }
 
-  // ── Step 2: Deterministic extraction ─────────────────────────────────────
+  // Step 2: deterministic extraction
   const decisionsResult = extractDecisions(messages);
   const responsibilitiesResult = extractResponsibilities(messages);
 
-  // ── Step 3: Persist decisions (idempotent via thread_key + version_no) ───
+  // Step 3: persist decisions
   const decPersist = await persistDecisions({
     supabase: supabase as unknown,
     chat_id,
@@ -150,7 +126,7 @@ export async function runAnalysisPipeline(args: {
     evidenceByDecisionId: decisionsResult.evidenceByDecisionId,
   });
 
-  // ── Step 5: Persist responsibilities (idempotent via app-level dedupe) ───
+  // Step 4: persist responsibilities
   const respPersist = await persistResponsibilities({
     supabase: supabase as unknown,
     chat_id,
@@ -168,7 +144,7 @@ export async function runAnalysisPipeline(args: {
   };
 }
 
-// ─── On-demand LLM enrichment ────────────────────────────────────────────────
+// On-demand LLM enrichment
 
 export type EnrichResult = {
   messages_analysed: number;
@@ -179,21 +155,11 @@ export type EnrichResult = {
 };
 
 /**
- * Returns the subset of messages the deterministic engine flagged as evidence,
- * plus CONTEXT_WINDOW neighbours on each side, sorted chronologically.
- *
- * Sending only candidates to the LLM keeps the prompt well under free-tier
- * TPM limits (~3-4K tokens instead of ~19K for a 250-message chat).
- *
- * Falls back to ALL messages when fewer than MIN_CANDIDATES are found
- * (e.g. a chat with almost no decision language — LLM should see everything).
+ * Runs enrichment using full chat context.
  */
 
 /**
- * On-demand LLM enrichment for a chat that has already been imported.
- * Re-runs deterministic extraction as a merge baseline, runs the LLM
- * (Gemini → Groq → deterministic), and persists any net-new items.
- * Safe to call multiple times — persistence is idempotent.
+ * Enrich extracted decisions and responsibilities.
  */
 export async function runEnrichment(args: {
   supabase: SupabaseClient;
@@ -212,7 +178,7 @@ export async function runEnrichment(args: {
     };
   }
 
-  // Deterministic baseline — the drafts that the LLM will improve
+  // Deterministic baseline
   const decisionsBase = extractDecisions(messages);
   const responsibilitiesBase = extractResponsibilities(messages);
   let llm_used: EnrichResult["llm_used"] = "deterministic";
@@ -221,7 +187,7 @@ export async function runEnrichment(args: {
     `enrich: ${messages.length} messages, ${decisionsBase.items.length} draft decisions, ${responsibilitiesBase.items.length} draft responsibilities`,
   );
 
-  // Prepare draft decisions for the LLM (title + status + confidence + evidence)
+  // Build draft decisions
   const draftDecisions = decisionsBase.items.map((d) => ({
     title: d.title,
     status: d.status,
@@ -229,7 +195,7 @@ export async function runEnrichment(args: {
     evidence_hashes: decisionsBase.evidenceByDecisionId[d.id] ?? [],
   }));
 
-  // Prepare draft responsibilities for the LLM
+  // Build draft responsibilities
   const draftResponsibilities = responsibilitiesBase.items.map((r) => ({
     title: r.title,
     owner: r.owner,
@@ -238,13 +204,13 @@ export async function runEnrichment(args: {
       (responsibilitiesBase.evidenceByResponsibilityId[r.id] ?? [])[0] ?? "",
   }));
 
-  // Fetch previously-tracked decisions so the LLM can reuse their thread_keys
+  // Load existing decisions for thread_key reuse
   const existingDecisions = await fetchExistingDecisions(supabase, chat_id);
   console.log(
     `enrich: found ${existingDecisions.length} existing decisions for thread_key reuse`,
   );
 
-  // LLM pass — send drafts + messages + existing decisions for context
+  // Run LLM pass
   const llmOutput = await runLLMOnMessages(
     messages,
     draftDecisions,
@@ -255,9 +221,8 @@ export async function runEnrichment(args: {
     `enrich: LLM returned ${llmOutput.decisions.length} decisions, ${llmOutput.responsibilities.length} responsibilities (provider: ${llmOutput.provider})`,
   );
 
-  // Convert LLM output directly to the format persistDecisions expects.
-  // The LLM output IS the final result — no merge needed.
-  // Falls back to deterministic baseline if LLM returned nothing.
+  // Convert LLM output to persistence format
+  // Fallback to deterministic results when needed
   let finalDecisions: DecisionItem[];
   let finalEvidenceByDecisionId: Record<string, string[]>;
   let finalResponsibilities: ResponsibilityItem[];
@@ -269,13 +234,13 @@ export async function runEnrichment(args: {
   ) {
     llm_used = llmOutput.provider;
 
-    // Build decision items from LLM output
+    // Build decision items
     finalDecisions = llmOutput.decisions.map((d) => {
       const id = "dec_" + generateHash("decision|" + d.thread_key).slice(0, 12);
       return {
         id,
         title: d.title,
-        version: 1, // persistDecisions will auto-assign the real version
+        version: 1, // final version set by persistDecisions
         status: d.status,
         confidence: d.confidence,
         explanation: d.explanation,
@@ -289,7 +254,7 @@ export async function runEnrichment(args: {
       finalEvidenceByDecisionId[finalDecisions[i].id] = d.evidence_hashes;
     }
 
-    // Build responsibility items from LLM output
+    // Build responsibility items
     finalResponsibilities = llmOutput.responsibilities.map((r) => {
       const id = "resp_" + generateHash("resp|" + r.evidence_hash).slice(0, 12);
       return {
@@ -310,7 +275,7 @@ export async function runEnrichment(args: {
       ];
     }
   } else {
-    // LLM failed — fall back to deterministic baseline
+    // Fallback to deterministic baseline
     finalDecisions = decisionsBase.items;
     finalEvidenceByDecisionId = decisionsBase.evidenceByDecisionId;
     finalResponsibilities = responsibilitiesBase.items;
@@ -318,7 +283,7 @@ export async function runEnrichment(args: {
       responsibilitiesBase.evidenceByResponsibilityId;
   }
 
-  // Compute which thread_keys the final result occupies
+  // Collect thread keys in final results
   const enrichedThreadKeys = new Set(
     finalDecisions.map(
       (d) =>
@@ -327,10 +292,10 @@ export async function runEnrichment(args: {
     ),
   );
 
-  // Clear responsibilities before re-inserting (no versioning for them).
+  // Replace responsibilities
   await clearResponsibilitiesForChat(supabase, chat_id);
 
-  // Persist decisions — enrichment mode updates in-place (no spurious v2).
+  // Persist decisions in enrichment mode
   const decPersist = await persistDecisions({
     supabase: supabase as unknown,
     chat_id,
@@ -349,13 +314,12 @@ export async function runEnrichment(args: {
     `enrich: persisted ${decPersist.decisions_inserted} new decisions, ${respPersist.inserted} responsibilities`,
   );
 
-  // Delete stale threads only when the LLM actually produced results
+  // Delete stale threads only after LLM output
   if (llm_used !== "deterministic" && enrichedThreadKeys.size > 0) {
     if (decPersist.threads_inserted > 0 || decPersist.decisions_inserted > 0) {
       await deleteStaleThreads(supabase, chat_id, enrichedThreadKeys);
     } else {
-      // LLM ran but nothing new written — verify all enriched threads exist
-      // before deleting stale ones (content-same skip in persistDecisions).
+      // Verify enriched threads before stale-thread cleanup
       const existingEnrichedIds = await getThreadIdsForKeys(
         supabase,
         chat_id,
@@ -377,8 +341,7 @@ export async function runEnrichment(args: {
 }
 
 /**
- * Returns the set of thread_keys from `keys` that actually exist in the DB.
- * Used to verify all enriched threads were persisted before deleting stale ones.
+ * Return existing thread keys from a set.
  */
 async function getThreadIdsForKeys(
   supabase: SupabaseClient,
@@ -397,8 +360,7 @@ async function getThreadIdsForKeys(
 }
 
 /**
- * Removes threads (+ their decisions + evidence) whose thread_key is NOT in
- * `keepKeys`. Used after enrichment to discard stale deterministic threads.
+ * Remove threads not in keep list.
  */
 async function deleteStaleThreads(
   supabase: SupabaseClient,
@@ -439,8 +401,7 @@ async function deleteStaleThreads(
 }
 
 /**
- * Deletes all responsibilities for the given chat.
- * Used by runEnrichment to replace rather than stack.
+ * Delete all responsibilities for a chat.
  */
 async function clearResponsibilitiesForChat(
   supabase: SupabaseClient,
@@ -462,15 +423,7 @@ async function clearResponsibilitiesForChat(
 }
 
 /**
- * Fetches all messages linked to the given import_id via import_messages,
- * returning them as MessageInput objects sorted chronologically by msg_ts.
- *
- * Uses chunked IN queries to avoid URL/query length limits on large imports.
- * Only selects the columns required by the extraction engine.
- */
-/**
- * Fetches ALL messages for a chat, sorted chronologically.
- * Used as a fallback when the import-scoped fetch returns nothing.
+ * Fetch all chat messages in time order.
  */
 async function fetchChatMessages(
   supabase: SupabaseClient,
@@ -482,7 +435,7 @@ async function fetchChatMessages(
   const results: MessageInput[] = [];
 
   let from = 0;
-  // Paginate in large chunks to avoid response-size limits
+  // Paginate by chunks
   while (true) {
     const { data: rows, error } = await db
       .from("messages")
@@ -528,7 +481,7 @@ async function fetchImportMessages(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
 
-  // Single join query instead of two-stage (links → messages)
+  // Single join query
   const { data: rows, error } = await db
     .from("import_messages")
     .select("messages(sender, text, msg_sha256, msg_ts)")
@@ -561,7 +514,7 @@ async function fetchImportMessages(
       timestamp: r.messages!.msg_ts,
     }));
 
-  // Sort chronologically so trigger scanning respects message order
+  // Sort chronologically
   results.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   return results;

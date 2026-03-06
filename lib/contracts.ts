@@ -2,11 +2,11 @@
 
 export type DecisionStatus = "Final" | "Tentative";
 
-/** A single WhatsApp message used as evidence for a decision or responsibility. */
+/** Evidence message. */
 export interface EvidenceMessage {
   text: string;
   sender: string;
-  timestamp: string; // ISO string
+  timestamp: string; // ISO
 }
 
 export interface DecisionItem {
@@ -17,10 +17,10 @@ export interface DecisionItem {
   confidence: number; // 0-100
   lastUpdated: string;
   explanation: string;
-  timestamp: string; // ISO string
-  /** Stable slug assigned by LLM to group decisions about the same topic. */
+  timestamp: string; // ISO
+  /** Decision thread key. */
   thread_key?: string;
-  /** Source messages used as evidence, sorted chronologically. */
+  /** Evidence messages. */
   evidence?: EvidenceMessage[];
 }
 
@@ -33,8 +33,8 @@ export interface ResponsibilityItem {
   due: string;
   status: ResponsibilityStatus;
   description: string;
-  timestamp: string; // ISO string
+  timestamp: string; // ISO
   evidenceCount: number;
-  /** Source messages used as evidence, sorted chronologically. */
+  /** Evidence messages. */
   evidence?: EvidenceMessage[];
 }

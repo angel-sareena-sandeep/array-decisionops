@@ -1,6 +1,6 @@
 /**
  * POST /api/import/whatsapp
- * Body JSON: { chat_name, file_name, file_sha256, content }
+ * Body: { chat_name, file_name, file_sha256, content }
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     content: _ct,
   } = (body as Record<string, unknown>) ?? {};
 
-  // ── Input validation ────────────────────────────────────────────────────────
+  // Validate input
   for (const [name, value, max] of [
     ["chat_name", _cn, MAX_LENGTHS.chat_name],
     ["file_name", _fn, MAX_LENGTHS.file_name],
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // After validation, these are guaranteed to be non-empty strings
+  // Safe after validation
   const chat_name = _cn as string;
   const file_name = _fn as string;
   const file_sha256 = _fs as string;
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
-  // ── Sync messages ───────────────────────────────────────────────────────────
+  // Sync messages
   let syncResult: Awaited<ReturnType<typeof syncWhatsAppImport>>;
   try {
     syncResult = await syncWhatsAppImport({
@@ -87,9 +87,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { chat_id, import_id, total_parsed, inserted_messages } = syncResult;
   const duplicates_skipped = total_parsed - inserted_messages;
 
-  // ── Analysis pipeline ───────────────────────────────────────────────────────
-  // Fetch messages via import_messages → messages (DB-linked set, not re-parsed),
-  // then extract and persist decisions + responsibilities (both idempotent).
+  // Run analysis pipeline
   let analysisResult: Awaited<ReturnType<typeof runAnalysisPipeline>>;
   try {
     analysisResult = await runAnalysisPipeline({
@@ -99,7 +97,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
   } catch (err: unknown) {
     console.error("runAnalysisPipeline error:", err);
-    // Analysis failure is non-fatal: sync already succeeded.
+    // Continue if analysis fails
     analysisResult = {
       messages_analysed: 0,
       decisions_detected: 0,

@@ -12,7 +12,7 @@ async function computeSha256(text: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// ── Module-level operation state (persists across page navigation) ────────────
+// Shared operation state
 
 type OpStore = {
   importing: boolean;
@@ -43,9 +43,7 @@ function patchOps(patch: Partial<OpStore>) {
 }
 
 /**
- * Custom hook – subscribes to the module-level ops store.
- * Triggers re-render whenever patchOps() is called (even from an async
- * callback that fires after the component has been unmounted and remounted).
+ * Hook for shared operation state.
  */
 function useOps(): OpStore {
   const [, tick] = useState(0);
@@ -251,7 +249,7 @@ export default function ImportCard() {
 
   return (
     <div className="col-span-2 bg-[#112C70] rounded-xl border border-[#5B58EB]/30 p-8 shadow-[0_8px_30px_rgba(10,35,83,0.6)]">
-      {/* Hidden file input */}
+      {/* File input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -260,7 +258,7 @@ export default function ImportCard() {
         onChange={handleFileChange}
       />
 
-      {/* Drop zone / click area */}
+      {/* Upload area */}
       <button
         type="button"
         onClick={handleDropZoneClick}
@@ -282,7 +280,7 @@ export default function ImportCard() {
         )}
       </button>
 
-      {/* Status message */}
+      {/* Status text */}
       {op.importMsg && (
         <p
           className={`mt-3 text-sm font-medium ${
@@ -293,7 +291,7 @@ export default function ImportCard() {
         </p>
       )}
 
-      {/* Clear confirmation prompt */}
+      {/* Clear confirm */}
       {confirmClear && (
         <div className="mt-4 p-3 bg-red-900/30 border border-red-400/40 rounded-lg flex items-center justify-between gap-3">
           <p className="text-sm text-red-300 font-medium">
@@ -318,7 +316,7 @@ export default function ImportCard() {
         </div>
       )}
 
-      {/* Submit + AI Enrichment + Clear buttons */}
+      {/* Action buttons */}
       <div className="mt-6 flex gap-3">
         <button
           type="button"
@@ -350,7 +348,7 @@ export default function ImportCard() {
         )}
       </div>
 
-      {/* AI enrichment result */}
+      {/* Enrichment result */}
       {op.enrichMsg && (
         <p
           className={`mt-3 text-sm font-medium ${
