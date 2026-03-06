@@ -12,6 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { runEnrichment } from "@/lib/orchestrate";
+import { isValidUUID, sanitizeErrorMessage } from "@/lib/security";
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: unknown;
@@ -30,12 +31,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  if (!isValidUUID(chat_id)) {
+    return NextResponse.json(
+      { error: "Invalid 'chat_id' format." },
+      { status: 400 },
+    );
+  }
+
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
     supabase = getSupabaseAdmin();
-  } catch (err: unknown) {
+  } catch {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Supabase config error." },
+      { error: "Database configuration error." },
       { status: 500 },
     );
   }
@@ -46,7 +54,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (err: unknown) {
     console.error("runEnrichment error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Enrichment failed." },
+      { error: sanitizeErrorMessage(err, "Enrichment failed.") },
       { status: 500 },
     );
   }

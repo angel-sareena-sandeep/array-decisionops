@@ -79,6 +79,15 @@ export const DECISION_FINAL_TRIGGERS: string[] = [
   "ok, decided",
   "ok decided",
   "alright, decided",
+  // Submission & deadlines
+  "submit by",
+  "submit on",
+  "submission by",
+  "deadline is",
+  "deadline set",
+  "internal deadline",
+  // Emoji confirmation
+  "✅",
 ];
 
 /**
@@ -150,6 +159,38 @@ export const DECISION_TENTATIVE_TRIGGERS: string[] = [
   "ideally we",
   "moving forward with",
   "we move forward with",
+  // Imperative group decisions
+  "we need to handle",
+  "we need to support",
+  "we need to fix",
+  "we need to add",
+  "we need to do",
+  "we need to make",
+  "we must handle",
+  "we must support",
+  "we have to handle",
+  "we gotta",
+  "needs to happen",
+  "has to happen",
+  "must happen",
+  // Temporal decisions
+  "complete by",
+  "done by",
+  "finish by",
+  "ready by",
+  "stable by",
+  // Deferral decisions
+  "optional for now",
+  "not for now",
+  "skip for now",
+  "not needed for now",
+  "defer for now",
+  "not needed yet",
+  // Feature freezes / scope locks
+  "no new features",
+  "no feature creep",
+  "no more features",
+  "feature freeze",
 ];
 
 /**
@@ -302,3 +343,46 @@ export const RESP_DATE_RE =
  */
 export const RESP_DATE_ACTION_RE =
   /\b(send|submit|finish|complete|deliver|prepare|share|upload|book|confirm|review|fix|write|get|do|make|handle|check|call|meet|present)\b/i;
+
+// ─── Decision context patterns ─────────────────────────────────────────────────
+
+/**
+ * "ok so" at message start — the speaker is summarising/confirming a decision.
+ * Requires at least 10 chars of substance after "ok so" to avoid matching
+ * throwaway uses like "ok so yeah".
+ */
+export const DECISION_SUMMARY_RE = /^ok\s+so\s+\S.{10,}/i;
+
+/**
+ * Decision-level confirmation emoji at end of a message.
+ */
+export const DECISION_EMOJI_RE = /[✅✓☑✔]\s*$/;
+
+/**
+ * Date reference (preposition + month + day) in a decision-level context.
+ * Distinct from RESP_DATE_RE — detects the schedule decision itself,
+ * not a task assignment.
+ */
+export const DECISION_DATE_RE =
+  /\b(by|before|until|on)\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}\b/i;
+
+/**
+ * Action word that co-occurs with DECISION_DATE_RE to confirm a schedule decision.
+ */
+export const DECISION_ACTION_RE =
+  /\b(submit|launch|deploy|release|ship|lock|freeze|complete|finish|deliver|stable|ready|live|due|deadline)\b/i;
+
+// ─── Agreement patterns (for context-window detection in decisionEngine) ────────
+
+/**
+ * Short standalone messages that signal agreement / acknowledgment.
+ * Anchored (^ … $) so they only match when the *entire* message is an
+ * agreement word, not when agreement words appear inside longer statements.
+ */
+export const AGREEMENT_SHORT_RE =
+  /^(ok|okay|alright|agreed|noted|yes|yep|yeah|yea|yup|works|sounds good|makes sense|cool|sure|fair enough|roger|perfect|fine|right|correct|exactly|bet|will do|on it|got it|good|nice|great|absolutely|definitely|for sure|true)[.!,✅👍🤝✔☑\s]*$/i;
+
+/**
+ * Messages composed entirely of agreement / confirmation emoji.
+ */
+export const AGREEMENT_EMOJI_RE = /^[👍✅🤝✔☑🫡👌💯🙌✓\s]+$/;

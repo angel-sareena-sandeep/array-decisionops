@@ -117,30 +117,34 @@ export async function syncWhatsAppImport(args: {
   }
 
   // ── 4) Insert import_messages ───────────────────────────────────────────────
-  // Query back message IDs for all hashes in this import (including pre-existing duplicates).
+  // Fetch ALL message IDs in one batched query, then link in one upsert.
   const allHashes = parsed.map((m) => m.message_hash);
   let linked_import_messages = 0;
 
+  const allMsgIds: { id: string }[] = [];
   for (const chunk of chunkArray(allHashes, CHUNK_SIZE)) {
     const { data: msgRows } = await db
       .from("messages")
-      .select("id, msg_sha256")
+      .select("id")
       .eq("chat_id", chat_id)
       .in("msg_sha256", chunk);
+    if (msgRows) allMsgIds.push(...(msgRows as { id: string }[]));
+  }
 
-    if (msgRows && msgRows.length > 0) {
-      const linkRows = (msgRows as { id: string }[]).map((m) => ({
-        import_id,
-        message_id: m.id,
-      }));
+  if (allMsgIds.length > 0) {
+    const linkRows = allMsgIds.map((m) => ({
+      import_id,
+      message_id: m.id,
+    }));
 
-      await db.from("import_messages").upsert(linkRows, {
+    for (const chunk of chunkArray(linkRows, CHUNK_SIZE)) {
+      await db.from("import_messages").upsert(chunk, {
         onConflict: "import_id,message_id",
         ignoreDuplicates: true,
       });
-
-      linked_import_messages += linkRows.length; // best-effort
     }
+
+    linked_import_messages = allMsgIds.length;
   }
 
   // ── 5) Update chat_imports stats ──────────────────────────────────────────

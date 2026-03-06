@@ -330,12 +330,13 @@ export async function runEnrichment(args: {
   // Clear responsibilities before re-inserting (no versioning for them).
   await clearResponsibilitiesForChat(supabase, chat_id);
 
-  // Persist decisions — version-aware compare detects v2/v3 automatically.
+  // Persist decisions — enrichment mode updates in-place (no spurious v2).
   const decPersist = await persistDecisions({
     supabase: supabase as unknown,
     chat_id,
     decisions: finalDecisions,
     evidenceByDecisionId: finalEvidenceByDecisionId,
+    enrichment: true,
   });
   const respPersist = await persistResponsibilities({
     supabase: supabase as unknown,
@@ -527,55 +528,38 @@ async function fetchImportMessages(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = supabase as any;
 
-  // Fetch all message_ids linked to this import
-  const { data: linkRows, error: linkErr } = await db
+  // Single join query instead of two-stage (links → messages)
+  const { data: rows, error } = await db
     .from("import_messages")
-    .select("message_id")
+    .select("messages(sender, text, msg_sha256, msg_ts)")
     .eq("import_id", import_id);
 
-  if (linkErr) {
-    console.error("orchestrate: import_messages query error:", linkErr.message);
+  if (error) {
+    console.error("orchestrate: import_messages join error:", error.message);
     return [];
   }
 
-  if (!linkRows || linkRows.length === 0) {
+  if (!rows || rows.length === 0) {
     return [];
   }
 
-  const messageIds: string[] = (linkRows as { message_id: string }[]).map(
-    (r) => r.message_id,
-  );
-
-  const results: MessageInput[] = [];
-
-  // Fetch message rows in chunks to avoid query-length limits
-  for (const chunk of chunkArray(messageIds, CHUNK_SIZE)) {
-    const { data: msgRows, error: msgErr } = await db
-      .from("messages")
-      .select("sender, text, msg_sha256, msg_ts")
-      .in("id", chunk);
-
-    if (msgErr) {
-      console.error("orchestrate: messages query error:", msgErr.message);
-      continue;
-    }
-
-    if (!msgRows) continue;
-
-    for (const row of msgRows as {
-      sender: string;
-      text: string;
-      msg_sha256: string;
-      msg_ts: string;
-    }[]) {
-      results.push({
-        sender: row.sender,
-        message_text: row.text,
-        message_hash: row.msg_sha256,
-        timestamp: row.msg_ts,
-      });
-    }
-  }
+  const results: MessageInput[] = (
+    rows as {
+      messages: {
+        sender: string;
+        text: string;
+        msg_sha256: string;
+        msg_ts: string;
+      } | null;
+    }[]
+  )
+    .filter((r) => r.messages !== null)
+    .map((r) => ({
+      sender: r.messages!.sender,
+      message_text: r.messages!.text,
+      message_hash: r.messages!.msg_sha256,
+      timestamp: r.messages!.msg_ts,
+    }));
 
   // Sort chronologically so trigger scanning respects message order
   results.sort((a, b) => a.timestamp.localeCompare(b.timestamp));

@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
 import { DecisionItem, DecisionStatus, EvidenceMessage } from "@/lib/contracts";
+import { isValidUUID, sanitizeErrorMessage } from "@/lib/security";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
@@ -19,6 +20,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    if (!isValidUUID(chat_id)) {
+      return NextResponse.json(
+        { error: "Invalid 'chat_id' format." },
+        { status: 400 },
+      );
+    }
+
     const q = params.get("q")?.toLowerCase() ?? "";
     const statusFilter = params.get("status") ?? "";
     const minConf = params.has("min_conf")
@@ -28,20 +36,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       ? parseInt(params.get("max_conf")!, 10)
       : 100;
     const limit = params.has("limit")
-      ? Math.max(1, parseInt(params.get("limit")!, 10))
+      ? Math.min(500, Math.max(1, parseInt(params.get("limit")!, 10) || 100))
       : 100;
     const offset = params.has("offset")
-      ? Math.max(0, parseInt(params.get("offset")!, 10))
+      ? Math.max(0, parseInt(params.get("offset")!, 10) || 0)
       : 0;
 
     let supabase: ReturnType<typeof getSupabaseAdmin>;
     try {
       supabase = getSupabaseAdmin();
-    } catch (err: unknown) {
+    } catch {
       return NextResponse.json(
-        {
-          error: err instanceof Error ? err.message : "Supabase config error.",
-        },
+        { error: "Database configuration error." },
         { status: 500 },
       );
     }
@@ -56,9 +62,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       console.error(
         "[GET /api/decisions] decision_threads query error:",
         threadErr.message,
-        threadErr,
       );
-      return NextResponse.json({ error: threadErr.message }, { status: 500 });
+      return NextResponse.json(
+        { error: "Failed to fetch decisions." },
+        { status: 500 },
+      );
     }
     if (!threadRows || threadRows.length === 0) {
       return NextResponse.json([] as DecisionItem[]);
@@ -81,9 +89,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       console.error(
         "[GET /api/decisions] decisions query error:",
         decErr.message,
-        decErr,
       );
-      return NextResponse.json({ error: decErr.message }, { status: 500 });
+      return NextResponse.json(
+        { error: "Failed to fetch decisions." },
+        { status: 500 },
+      );
     }
     if (!decRows || decRows.length === 0) {
       return NextResponse.json([] as DecisionItem[]);
@@ -150,44 +160,16 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const decisionIds = items.map((d) => d.id);
     const evidenceByDecId: Record<string, EvidenceMessage[]> = {};
     if (decisionIds.length > 0) {
+      // Single query using Supabase foreign key join
       const { data: evRows } = await supabase
         .from("decision_evidence")
-        .select("decision_id, message_id")
+        .select("decision_id, messages(id, text, sender, msg_ts)")
         .in("decision_id", decisionIds);
 
-      if (evRows && evRows.length > 0) {
-        const msgIds = [
-          ...new Set(
-            (evRows as { decision_id: string; message_id: string }[]).map(
-              (r) => r.message_id,
-            ),
-          ),
-        ];
-        const { data: msgRows } = await supabase
-          .from("messages")
-          .select("id, text, sender, msg_ts")
-          .in("id", msgIds);
-
-        const msgById: Record<
-          string,
-          { text: string; sender: string; msg_ts: string }
-        > = {};
-        if (msgRows) {
-          for (const m of msgRows as {
-            id: string;
-            text: string;
-            sender: string;
-            msg_ts: string;
-          }[]) {
-            msgById[m.id] = m;
-          }
-        }
-
-        for (const ev of evRows as {
-          decision_id: string;
-          message_id: string;
-        }[]) {
-          const msg = msgById[ev.message_id];
+      if (evRows) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const ev of evRows as any[]) {
+          const msg = ev.messages;
           if (!msg) continue;
           if (!evidenceByDecId[ev.decision_id])
             evidenceByDecId[ev.decision_id] = [];
@@ -211,7 +193,10 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(items);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error("[GET /api/decisions] Unhandled error:", message, err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[GET /api/decisions] Unhandled error:", message);
+    return NextResponse.json(
+      { error: sanitizeErrorMessage(err, "Failed to fetch decisions.") },
+      { status: 500 },
+    );
   }
 }

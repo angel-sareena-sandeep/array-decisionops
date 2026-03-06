@@ -99,17 +99,28 @@ TITLE: factual statement of WHAT was decided, max 80 chars. Write in your own wo
   ✗ "we're using the university HPC cluster for the final training run, confirmed access" (copied message)
   ✓ "University HPC cluster selected for final training run"
 
-EXPLANATION: context + outcome + reasoning, max 300 chars. NOT a copy of any message.
+EXPLANATION: Two parts, max 300 chars total. NOT a copy of any message.
+  Part 1 — WHAT: Summarise the decision context and outcome in 1-2 sentences.
+  Part 2 — WHY this status: End with "Final because …" or "Tentative because …".
+  Example: "Internal submission deadline set to March 4, one day before the competition closes. Final because all three members explicitly confirmed."
+  Example: "Backend target date proposed as Feb 24. Tentative because it was marked contingent on re-import tests passing."
 
 STATUS: Final = definitive ("decided / going with / locked in / approved"). Tentative = directional ("let's try / I suggest / we should").
 
-CONFIDENCE: 90-100 explicit | 70-89 strong signal | 50-69 moderate | 30-49 weak.
+CONFIDENCE: How certain/final the decision is. Tentative decisions MUST score lower than Final ones.
+  Final:     80-100 (explicit agreement from multiple people) | 70-79 (clear but not unanimous).
+  Tentative: 50-69  (directional, proposed, or conditional)   | 30-49 (vague or weakly implied).
+  A Tentative decision should NEVER exceed 69.
 
 DECIDED_AT: timestamp of the message that STATES the outcome.
 
-THREAD_KEY: lowercase a-z 0-9 underscore, max 64 chars. Same topic = same key.
+THREAD_KEY: lowercase a-z 0-9 underscore, max 64 chars.
+  • Same topic = SAME key — even if the outcome changed over time (e.g. deadline moved, choice changed).
+  • Group all messages about the same underlying question under one thread_key.
+  • Output only ONE decision per thread_key (the latest/most resolved one).
+  • Do NOT create separate decisions for "proposal" + "final answer" on the same topic — merge them into one.
 
-MERGING DUPLICATES: If two or more draft decisions are about the same topic, output ONE decision with all their evidence messages combined in evidence_hashes.
+MERGING DUPLICATES: If two or more draft decisions are about the same topic (even if worded differently or the outcome evolved), output ONE decision using the LATEST outcome, with ALL their evidence messages combined in evidence_hashes.
 
 Also: if you find decisions in the chat that the rules engine missed entirely, ADD them.
 
@@ -136,11 +147,12 @@ Also: if you find responsibilities in the chat that the rules engine missed, ADD
 
 ━━━ VERSIONING ━━━
 
-If "existing_decisions" is present, it lists decisions already saved from a previous run.
+If "existing_decisions" is present, it lists decisions already saved from a previous import.
 For each decision you output:
-  • Same topic as an existing one → use its EXACT thread_key.
-  • New topic → invent a fresh thread_key.
-The backend compares content to detect changes and assigns v2/v3 automatically.
+  • Same topic as an existing one → you MUST use its EXACT thread_key, no exceptions.
+  • New topic not in existing_decisions → invent a fresh thread_key.
+The backend detects whether the content changed and automatically assigns v2/v3.
+NEVER invent a new thread_key for a topic that already exists — that creates a duplicate instead of a version.
 
 ━━━
 
@@ -300,6 +312,22 @@ function extractJSON(text: string): unknown {
   return JSON.parse(stripped);
 }
 
+// ─── Timeout helpers ──────────────────────────────────────────────────────────
+
+/** Base timeout for LLM requests (small chats). */
+const BASE_TIMEOUT_MS = 60_000;
+/** Extra time granted per 100 messages in the chunk. */
+const TIMEOUT_PER_100_MSGS_MS = 15_000;
+/** Absolute ceiling — no single LLM call waits longer than this. */
+const MAX_TIMEOUT_MS = 180_000;
+
+/** Returns a deadline in ms that scales with the number of messages. */
+function computeTimeout(messageCount: number): number {
+  const scaled =
+    BASE_TIMEOUT_MS + Math.ceil(messageCount / 100) * TIMEOUT_PER_100_MSGS_MS;
+  return Math.min(scaled, MAX_TIMEOUT_MS);
+}
+
 // ─── Retry helpers ────────────────────────────────────────────────────────────
 
 const sleep = (ms: number) =>
@@ -339,6 +367,7 @@ async function callOpenRouter(
   systemPrompt: string,
   userContent: string,
   idToHash: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<LLMChunkResult> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey || apiKey === "your_openrouter_api_key_here") {
@@ -362,6 +391,7 @@ async function callOpenRouter(
       response_format: { type: "json_object" },
       temperature: 0.1,
     }),
+    signal,
   });
 
   if (!res.ok) {
@@ -400,6 +430,7 @@ async function callGroq(
   systemPrompt: string,
   userContent: string,
   idToHash: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<LLMChunkResult> {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey === "your_groq_api_key_here") {
@@ -413,7 +444,7 @@ async function callGroq(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userContent },
@@ -421,6 +452,7 @@ async function callGroq(
       response_format: { type: "json_object" },
       temperature: 0.1,
     }),
+    signal,
   });
 
   if (!res.ok) {
@@ -458,26 +490,40 @@ async function callGroq(
 // ─── Fallback chain ───────────────────────────────────────────────────────────
 
 /**
- * Tries OpenRouter (arcee-ai/trinity-large-preview:free, 131K context) first, then Groq as fallback.
+ * Tries OpenRouter first, then Groq as fallback.
+ * Each call gets its own AbortController so the HTTP connection is killed on
+ * timeout — no zombie response can arrive after the fallback wins.
+ *
  * `failed` is a shared Set across chunks — if a provider hard-fails once,
  * it is added to `failed` and skipped for all remaining chunks.
+ *
+ * `messageCount` drives a dynamic timeout: small chats get 30 s, large chats
+ * scale up (+10 s per 100 messages) capped at 120 s.
  */
 async function callWithFallback(
   systemPrompt: string,
   userContent: string,
   failed: Set<string>,
   idToHash: Record<string, string> = {},
+  messageCount: number = 0,
 ): Promise<{ result: LLMChunkResult; provider: "openrouter" | "groq" } | null> {
+  const timeoutMs = computeTimeout(messageCount);
+
   if (!failed.has("openrouter")) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
     try {
       const result = await withRetry(
-        () => callOpenRouter(systemPrompt, userContent, idToHash),
+        () => callOpenRouter(systemPrompt, userContent, idToHash, ac.signal),
         2,
       );
+      clearTimeout(timer);
       return { result, provider: "openrouter" };
     } catch (err) {
+      clearTimeout(timer);
+      const isTimeout = ac.signal.aborted;
       console.warn(
-        "llm: OpenRouter failed, trying Groq:",
+        `llm: OpenRouter ${isTimeout ? `timed out after ${timeoutMs / 1_000}s` : "failed"}, trying Groq:`,
         err instanceof Error ? err.message : err,
       );
       failed.add("openrouter");
@@ -485,15 +531,20 @@ async function callWithFallback(
   }
 
   if (!failed.has("groq")) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
     try {
       const result = await withRetry(
-        () => callGroq(systemPrompt, userContent, idToHash),
+        () => callGroq(systemPrompt, userContent, idToHash, ac.signal),
         2,
       );
+      clearTimeout(timer);
       return { result, provider: "groq" };
     } catch (err) {
+      clearTimeout(timer);
+      const isTimeout = ac.signal.aborted;
       console.warn(
-        "llm: Groq failed, falling back to deterministic only:",
+        `llm: Groq ${isTimeout ? `timed out after ${timeoutMs / 1_000}s` : "failed"}, falling back to deterministic only:`,
         err instanceof Error ? err.message : err,
       );
       failed.add("groq");
@@ -576,6 +627,7 @@ export async function runLLMOnMessages(
       userContent,
       failedProviders,
       idToHash,
+      chunks[i].length,
     );
 
     if (!outcome) continue; // both providers failed for this chunk — skip it

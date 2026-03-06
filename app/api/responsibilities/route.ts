@@ -10,6 +10,7 @@ import {
   ResponsibilityStatus,
   EvidenceMessage,
 } from "@/lib/contracts";
+import { isValidUUID, sanitizeErrorMessage } from "@/lib/security";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const params = req.nextUrl.searchParams;
@@ -22,6 +23,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  if (!isValidUUID(chat_id)) {
+    return NextResponse.json(
+      { error: "Invalid 'chat_id' format." },
+      { status: 400 },
+    );
+  }
+
   const q = params.get("q")?.toLowerCase() ?? "";
   const statusFilter = params.get("status") ?? "";
   const ownerFilter = params.get("owner")?.toLowerCase() ?? "";
@@ -29,9 +37,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
     supabase = getSupabaseAdmin();
-  } catch (err: unknown) {
+  } catch {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Supabase config error." },
+      { error: "Database configuration error." },
       { status: 500 },
     );
   }
@@ -52,7 +60,11 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const { data: rows, error } = await query;
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[GET /api/responsibilities] query error:", error.message);
+    return NextResponse.json(
+      { error: "Failed to fetch responsibilities." },
+      { status: 500 },
+    );
   }
   if (!rows || rows.length === 0) {
     return NextResponse.json([] as ResponsibilityItem[]);
@@ -154,6 +166,13 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  if (!isValidUUID(id)) {
+    return NextResponse.json(
+      { error: "Invalid 'id' format." },
+      { status: 400 },
+    );
+  }
+
   const validStatuses: ResponsibilityStatus[] = [
     "Open",
     "Completed",
@@ -162,7 +181,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   if (!validStatuses.includes(status as ResponsibilityStatus)) {
     return NextResponse.json(
       {
-        error: `Invalid status '${status}'. Must be one of: ${validStatuses.join(", ")}.`,
+        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}.`,
       },
       { status: 400 },
     );
@@ -171,20 +190,27 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
     supabase = getSupabaseAdmin();
-  } catch (err: unknown) {
+  } catch {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Supabase config error." },
+      { error: "Database configuration error." },
       { status: 500 },
     );
   }
 
-  const { error } = await supabase
+  const { error: updateErr } = await supabase
     .from("responsibilities")
     .update({ status })
     .eq("id", id);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (updateErr) {
+    console.error(
+      "[PATCH /api/responsibilities] update error:",
+      updateErr.message,
+    );
+    return NextResponse.json(
+      { error: "Failed to update responsibility." },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ success: true });

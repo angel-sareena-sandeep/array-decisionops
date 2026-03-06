@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import { isValidUUID } from "@/lib/security";
 
 export async function DELETE(req: NextRequest): Promise<NextResponse> {
   let body: unknown;
@@ -27,12 +28,19 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  if (!isValidUUID(chat_id)) {
+    return NextResponse.json(
+      { error: "Invalid 'chat_id' format." },
+      { status: 400 },
+    );
+  }
+
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
     supabase = getSupabaseAdmin();
-  } catch (err: unknown) {
+  } catch {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Supabase config error." },
+      { error: "Database configuration error." },
       { status: 500 },
     );
   }
@@ -64,11 +72,16 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
         .from("decision_evidence")
         .delete()
         .in("decision_id", decIds);
-      if (error)
+      if (error) {
+        console.error(
+          "[DELETE /api/chat/clear] decision_evidence:",
+          error.message,
+        );
         return NextResponse.json(
-          { error: `decision_evidence: ${error.message}` },
+          { error: "Failed to clear chat data." },
           { status: 500 },
         );
+      }
     }
 
     // ── 3) Delete decisions ────────────────────────────────────────────────────
@@ -76,11 +89,13 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
       .from("decisions")
       .delete()
       .in("thread_id", threadIds);
-    if (decErr)
+    if (decErr) {
+      console.error("[DELETE /api/chat/clear] decisions:", decErr.message);
       return NextResponse.json(
-        { error: `decisions: ${decErr.message}` },
+        { error: "Failed to clear chat data." },
         { status: 500 },
       );
+    }
   }
 
   // ── 4) Delete decision_threads ───────────────────────────────────────────────
@@ -89,11 +104,16 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
       .from("decision_threads")
       .delete()
       .eq("chat_id", chat_id);
-    if (error)
+    if (error) {
+      console.error(
+        "[DELETE /api/chat/clear] decision_threads:",
+        error.message,
+      );
       return NextResponse.json(
-        { error: `decision_threads: ${error.message}` },
+        { error: "Failed to clear chat data." },
         { status: 500 },
       );
+    }
   }
 
   // ── 5) Delete import_messages via chat_imports ───────────────────────────────
@@ -111,11 +131,13 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
       .from("import_messages")
       .delete()
       .in("import_id", importIds);
-    if (error)
+    if (error) {
+      console.error("[DELETE /api/chat/clear] import_messages:", error.message);
       return NextResponse.json(
-        { error: `import_messages: ${error.message}` },
+        { error: "Failed to clear chat data." },
         { status: 500 },
       );
+    }
   }
 
   // ── 6) Delete responsibilities ───────────────────────────────────────────────
@@ -124,21 +146,28 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
       .from("responsibilities")
       .delete()
       .eq("chat_id", chat_id);
-    if (error)
+    if (error) {
+      console.error(
+        "[DELETE /api/chat/clear] responsibilities:",
+        error.message,
+      );
       return NextResponse.json(
-        { error: `responsibilities: ${error.message}` },
+        { error: "Failed to clear chat data." },
         { status: 500 },
       );
+    }
   }
 
   // ── 7) Delete messages ───────────────────────────────────────────────────────
   {
     const { error } = await db.from("messages").delete().eq("chat_id", chat_id);
-    if (error)
+    if (error) {
+      console.error("[DELETE /api/chat/clear] messages:", error.message);
       return NextResponse.json(
-        { error: `messages: ${error.message}` },
+        { error: "Failed to clear chat data." },
         { status: 500 },
       );
+    }
   }
 
   // ── 8) Delete chat_imports ───────────────────────────────────────────────────
@@ -147,21 +176,25 @@ export async function DELETE(req: NextRequest): Promise<NextResponse> {
       .from("chat_imports")
       .delete()
       .eq("chat_id", chat_id);
-    if (error)
+    if (error) {
+      console.error("[DELETE /api/chat/clear] chat_imports:", error.message);
       return NextResponse.json(
-        { error: `chat_imports: ${error.message}` },
+        { error: "Failed to clear chat data." },
         { status: 500 },
       );
+    }
   }
 
   // ── 9) Delete chat ───────────────────────────────────────────────────────────
   {
     const { error } = await db.from("chats").delete().eq("id", chat_id);
-    if (error)
+    if (error) {
+      console.error("[DELETE /api/chat/clear] chats:", error.message);
       return NextResponse.json(
-        { error: `chats: ${error.message}` },
+        { error: "Failed to clear chat data." },
         { status: 500 },
       );
+    }
   }
 
   return NextResponse.json({ success: true });

@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseServer";
+import { isValidUUID } from "@/lib/security";
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const chat_id = req.nextUrl.searchParams.get("chat_id");
@@ -16,29 +17,76 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  if (!isValidUUID(chat_id)) {
+    return NextResponse.json(
+      { error: "Invalid 'chat_id' format." },
+      { status: 400 },
+    );
+  }
+
   let supabase: ReturnType<typeof getSupabaseAdmin>;
   try {
     supabase = getSupabaseAdmin();
-  } catch (err: unknown) {
+  } catch {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Supabase config error." },
+      { error: "Database configuration error." },
       { status: 500 },
     );
   }
 
-  // ── Latest import ───────────────────────────────────────────────────────────
-  const { data: latestImport, error: importErr } = await supabase
-    .from("chat_imports")
-    .select(
-      "id, imported_at, messages_parsed, new_messages, duplicates_skipped",
-    )
-    .eq("chat_id", chat_id)
-    .order("imported_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // ── Parallel batch 1: three independent queries ──────────────────────────
+  const [latestImportRes, openRespRes, threadRes] = await Promise.all([
+    supabase
+      .from("chat_imports")
+      .select(
+        "id, imported_at, messages_parsed, new_messages, duplicates_skipped",
+      )
+      .eq("chat_id", chat_id)
+      .order("imported_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("responsibilities")
+      .select("id", { count: "exact", head: true })
+      .eq("chat_id", chat_id)
+      .in("status", ["Open", "Overdue"]),
+    supabase.from("decision_threads").select("id").eq("chat_id", chat_id),
+  ]);
 
+  const { data: latestImport, error: importErr } = latestImportRes;
   if (importErr) {
-    return NextResponse.json({ error: importErr.message }, { status: 500 });
+    console.error(
+      "[GET /api/dashboard/summary] import query error:",
+      importErr.message,
+    );
+    return NextResponse.json(
+      { error: "Failed to fetch summary." },
+      { status: 500 },
+    );
+  }
+
+  const { count: openRespCount, error: respErr } = openRespRes;
+  if (respErr) {
+    console.error(
+      "[GET /api/dashboard/summary] resp query error:",
+      respErr.message,
+    );
+    return NextResponse.json(
+      { error: "Failed to fetch summary." },
+      { status: 500 },
+    );
+  }
+
+  const { data: threadRows, error: threadErr } = threadRes;
+  if (threadErr) {
+    console.error(
+      "[GET /api/dashboard/summary] thread query error:",
+      threadErr.message,
+    );
+    return NextResponse.json(
+      { error: "Failed to fetch summary." },
+      { status: 500 },
+    );
   }
 
   const last_import_at: string | null = latestImport?.imported_at ?? null;
@@ -47,48 +95,46 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
   const duplicates_skipped_latest: number =
     latestImport?.duplicates_skipped ?? 0;
 
-  // ── Open responsibilities count ─────────────────────────────────────────────
-  const { count: openRespCount, error: respErr } = await supabase
-    .from("responsibilities")
-    .select("id", { count: "exact", head: true })
-    .eq("chat_id", chat_id)
-    .in("status", ["Open", "Overdue"]);
-
-  if (respErr) {
-    return NextResponse.json({ error: respErr.message }, { status: 500 });
-  }
-
-  // ── Latest decisions count ──────────────────────────────────────────────────
-  const { data: threadRows, error: threadErr } = await supabase
-    .from("decision_threads")
-    .select("id")
-    .eq("chat_id", chat_id);
-
-  if (threadErr) {
-    return NextResponse.json({ error: threadErr.message }, { status: 500 });
-  }
-
+  // ── Parallel batch 2: decision counts (depends on threadIds) ────────────
   let latest_decisions_count = 0;
   let v2_plus_count = 0;
   if (threadRows && threadRows.length > 0) {
     const threadIds = threadRows.map((t: { id: string }) => t.id);
-    const { count: decCount, error: decErr } = await supabase
-      .from("decisions")
-      .select("id", { count: "exact", head: true })
-      .in("thread_id", threadIds);
+    const [decCountRes, v2CountRes] = await Promise.all([
+      supabase
+        .from("decisions")
+        .select("id", { count: "exact", head: true })
+        .in("thread_id", threadIds),
+      supabase
+        .from("decisions")
+        .select("id", { count: "exact", head: true })
+        .in("thread_id", threadIds)
+        .gt("version_no", 1),
+    ]);
+
+    const { count: decCount, error: decErr } = decCountRes;
     if (decErr) {
-      return NextResponse.json({ error: decErr.message }, { status: 500 });
+      console.error(
+        "[GET /api/dashboard/summary] decCount error:",
+        decErr.message,
+      );
+      return NextResponse.json(
+        { error: "Failed to fetch summary." },
+        { status: 500 },
+      );
     }
     latest_decisions_count = decCount ?? 0;
 
-    // ── V2+ decisions count ─────────────────────────────────────────────────
-    const { count: v2Count, error: v2Err } = await supabase
-      .from("decisions")
-      .select("id", { count: "exact", head: true })
-      .in("thread_id", threadIds)
-      .gt("version_no", 1);
+    const { count: v2Count, error: v2Err } = v2CountRes;
     if (v2Err) {
-      return NextResponse.json({ error: v2Err.message }, { status: 500 });
+      console.error(
+        "[GET /api/dashboard/summary] v2Count error:",
+        v2Err.message,
+      );
+      return NextResponse.json(
+        { error: "Failed to fetch summary." },
+        { status: 500 },
+      );
     }
     v2_plus_count = v2Count ?? 0;
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect } from "react";
 
 type Status = "idle" | "loading" | "success" | "error";
 
@@ -12,56 +12,59 @@ async function computeSha256(text: string): Promise<string> {
   return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// ── Module-level operation state (persists across page navigation) ────────────
+
+type OpStore = {
+  importing: boolean;
+  enriching: boolean;
+  importMsg: string;
+  importStatus: Status;
+  enrichMsg: string;
+  enrichStatus: "idle" | "loading" | "done" | "error";
+};
+
+const ops: OpStore = {
+  importing: false,
+  enriching: false,
+  importMsg: "",
+  importStatus: "idle",
+  enrichMsg: "",
+  enrichStatus: "idle",
+};
+
+let importDismissTimer: ReturnType<typeof setTimeout> | null = null;
+let enrichDismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+function patchOps(patch: Partial<OpStore>) {
+  Object.assign(ops, patch);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("decisionops:ops-changed"));
+  }
+}
+
+/**
+ * Custom hook – subscribes to the module-level ops store.
+ * Triggers re-render whenever patchOps() is called (even from an async
+ * callback that fires after the component has been unmounted and remounted).
+ */
+function useOps(): OpStore {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const handler = () => tick((n) => n + 1);
+    window.addEventListener("decisionops:ops-changed", handler);
+    return () => window.removeEventListener("decisionops:ops-changed", handler);
+  }, []);
+  return ops;
+}
+
 export default function ImportCard() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<Status>("idle");
-  const [message, setMessage] = useState<string>("");
   const [hasChatLoaded, setHasChatLoaded] = useState(false);
   const [clearStatus, setClearStatus] = useState<"idle" | "loading">("idle");
   const [confirmClear, setConfirmClear] = useState(false);
-  const [enrichStatus, setEnrichStatus] = useState<
-    "idle" | "loading" | "done" | "error"
-  >("idle");
-  const [enrichMessage, setEnrichMessage] = useState<string>("");
 
-  // Ref-based lock to survive page navigation
-  const importingRef = useRef(false);
-  const enrichingRef = useRef(false);
-
-  // Auto-dismiss notice messages after a timeout
-  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const enrichDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const scheduleDismiss = useCallback(
-    (which: "import" | "enrich", ms = 6000) => {
-      if (which === "import") {
-        if (dismissTimer.current) clearTimeout(dismissTimer.current);
-        dismissTimer.current = setTimeout(() => {
-          setMessage("");
-          setStatus("idle");
-          dismissTimer.current = null;
-        }, ms);
-      } else {
-        if (enrichDismissTimer.current)
-          clearTimeout(enrichDismissTimer.current);
-        enrichDismissTimer.current = setTimeout(() => {
-          setEnrichMessage("");
-          setEnrichStatus("idle");
-          enrichDismissTimer.current = null;
-        }, ms);
-      }
-    },
-    [],
-  );
-
-  // Cleanup timers on unmount
-  useEffect(() => {
-    return () => {
-      if (dismissTimer.current) clearTimeout(dismissTimer.current);
-      if (enrichDismissTimer.current) clearTimeout(enrichDismissTimer.current);
-    };
-  }, []);
+  const op = useOps();
 
   useEffect(() => {
     setHasChatLoaded(!!localStorage.getItem("decisionops_chat_id"));
@@ -82,24 +85,22 @@ export default function ImportCard() {
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     setSelectedFile(file);
-    setStatus("idle");
-    setMessage("");
-    // Reset input so the same file can be re-selected after a clear
+    patchOps({ importStatus: "idle", importMsg: "" });
     e.target.value = "";
   }
 
   async function handleSubmit() {
-    if (!selectedFile || importingRef.current) return;
+    if (!selectedFile || ops.importing || ops.enriching) return;
 
-    importingRef.current = true;
-    setStatus("loading");
-    setMessage("");
+    if (importDismissTimer) {
+      clearTimeout(importDismissTimer);
+      importDismissTimer = null;
+    }
+    patchOps({ importing: true, importStatus: "loading", importMsg: "" });
 
     try {
       const content = await selectedFile.text();
       const file_sha256 = await computeSha256(content);
-      // Strip extension, then strip WhatsApp re-export suffixes like " (1)", "(2)", "_2"
-      // so that "WhatsApp Chat(1).txt" maps to the same chat as "WhatsApp Chat.txt".
       const baseName = selectedFile.name.replace(/\.[^.]+$/, "");
       const chat_name = baseName
         .replace(/\s*\(\d+\)$/, "")
@@ -119,13 +120,15 @@ export default function ImportCard() {
         throw new Error(json?.error ?? `Request failed (${res.status})`);
       }
 
-      setStatus("success");
-      setMessage(
-        `Import complete — ${json.new_messages ?? 0} new messages, ` +
+      patchOps({
+        importing: false,
+        importStatus: "success",
+        importMsg:
+          `Import complete — ${json.new_messages ?? 0} new messages, ` +
           `${json.decisions_new ?? 0} new decisions (${json.decisions_detected ?? 0} detected), ` +
           `${json.responsibilities_new ?? 0} new responsibilities (${json.responsibilities_detected ?? 0} detected).`,
-      );
-      // Persist chat_id so all pages can query the correct dataset
+      });
+
       if (json.chat_id) {
         localStorage.setItem("decisionops_chat_id", json.chat_id);
         window.dispatchEvent(
@@ -135,13 +138,21 @@ export default function ImportCard() {
         );
       }
       setSelectedFile(null);
-      scheduleDismiss("import");
+
+      importDismissTimer = setTimeout(() => {
+        patchOps({ importMsg: "", importStatus: "idle" });
+        importDismissTimer = null;
+      }, 6000);
     } catch (err: unknown) {
-      setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Upload failed.");
-      scheduleDismiss("import", 8000);
-    } finally {
-      importingRef.current = false;
+      patchOps({
+        importing: false,
+        importStatus: "error",
+        importMsg: err instanceof Error ? err.message : "Upload failed.",
+      });
+      importDismissTimer = setTimeout(() => {
+        patchOps({ importMsg: "", importStatus: "idle" });
+        importDismissTimer = null;
+      }, 8000);
     }
   }
 
@@ -151,7 +162,7 @@ export default function ImportCard() {
 
     setClearStatus("loading");
     setConfirmClear(false);
-    setMessage("");
+    patchOps({ importMsg: "" });
 
     try {
       const res = await fetch("/api/chat/clear", {
@@ -165,12 +176,16 @@ export default function ImportCard() {
 
       localStorage.removeItem("decisionops_chat_id");
       setHasChatLoaded(false);
-      setStatus("idle");
-      setMessage("Chat data cleared successfully.");
+      patchOps({
+        importStatus: "idle",
+        importMsg: "Chat data cleared successfully.",
+      });
       window.dispatchEvent(new CustomEvent("decisionops:cleared"));
     } catch (err: unknown) {
-      setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Clear failed.");
+      patchOps({
+        importStatus: "error",
+        importMsg: err instanceof Error ? err.message : "Clear failed.",
+      });
     } finally {
       setClearStatus("idle");
     }
@@ -178,11 +193,13 @@ export default function ImportCard() {
 
   async function handleEnrich() {
     const chat_id = localStorage.getItem("decisionops_chat_id");
-    if (!chat_id || enrichingRef.current) return;
+    if (!chat_id || ops.importing || ops.enriching) return;
 
-    enrichingRef.current = true;
-    setEnrichStatus("loading");
-    setEnrichMessage("");
+    if (enrichDismissTimer) {
+      clearTimeout(enrichDismissTimer);
+      enrichDismissTimer = null;
+    }
+    patchOps({ enriching: true, enrichStatus: "loading", enrichMsg: "" });
 
     try {
       const res = await fetch("/api/enrich", {
@@ -200,27 +217,35 @@ export default function ImportCard() {
           : json.llm_used === "groq"
             ? "Groq"
             : null;
-      setEnrichStatus("done");
-      setEnrichMessage(
-        providerLabel
+
+      patchOps({
+        enriching: false,
+        enrichStatus: "done",
+        enrichMsg: providerLabel
           ? `AI enrichment complete via ${providerLabel} (${json.candidate_messages_sent ?? "?"} messages analysed) — ${json.decisions_added ?? 0} new decisions, ${json.responsibilities_added ?? 0} new responsibilities.`
           : "LLM unavailable — no new items from AI.",
-      );
-      scheduleDismiss("enrich");
-      // Refresh dashboard after enrichment
+      });
+
       window.dispatchEvent(
         new CustomEvent("decisionops:imported", {
           detail: { chat_id },
         }),
       );
+
+      enrichDismissTimer = setTimeout(() => {
+        patchOps({ enrichMsg: "", enrichStatus: "idle" });
+        enrichDismissTimer = null;
+      }, 6000);
     } catch (err: unknown) {
-      setEnrichStatus("error");
-      setEnrichMessage(
-        err instanceof Error ? err.message : "Enrichment failed.",
-      );
-      scheduleDismiss("enrich", 8000);
-    } finally {
-      enrichingRef.current = false;
+      patchOps({
+        enriching: false,
+        enrichStatus: "error",
+        enrichMsg: err instanceof Error ? err.message : "Enrichment failed.",
+      });
+      enrichDismissTimer = setTimeout(() => {
+        patchOps({ enrichMsg: "", enrichStatus: "idle" });
+        enrichDismissTimer = null;
+      }, 8000);
     }
   }
 
@@ -258,13 +283,13 @@ export default function ImportCard() {
       </button>
 
       {/* Status message */}
-      {message && (
+      {op.importMsg && (
         <p
           className={`mt-3 text-sm font-medium ${
-            status === "success" ? "text-[#56E1E9]" : "text-red-400"
+            op.importStatus === "success" ? "text-[#56E1E9]" : "text-red-400"
           }`}
         >
-          {message}
+          {op.importMsg}
         </p>
       )}
 
@@ -298,21 +323,19 @@ export default function ImportCard() {
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={
-            !selectedFile || status === "loading" || enrichStatus === "loading"
-          }
+          disabled={!selectedFile || op.importing || op.enriching}
           className="flex-1 bg-[#5B58EB] text-white py-3 rounded-lg font-medium hover:bg-[#5B58EB]/80 transition disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {status === "loading" ? "Importing…" : "Import & Sync"}
+          {op.importing ? "Importing…" : "Import & Sync"}
         </button>
         {hasChatLoaded && (
           <button
             type="button"
             onClick={handleEnrich}
-            disabled={enrichStatus === "loading" || status === "loading"}
+            disabled={op.importing || op.enriching}
             className="px-4 py-3 bg-[#BB63FF]/20 text-[#BB63FF] border border-[#BB63FF]/40 rounded-lg font-medium hover:bg-[#BB63FF]/30 transition disabled:opacity-40 disabled:cursor-not-allowed text-sm"
           >
-            {enrichStatus === "loading" ? "Enriching…" : "✨ Run AI Enrichment"}
+            {op.enriching ? "Enriching…" : "✨ Run AI Enrichment"}
           </button>
         )}
         {hasChatLoaded && (
@@ -328,13 +351,13 @@ export default function ImportCard() {
       </div>
 
       {/* AI enrichment result */}
-      {enrichMessage && (
+      {op.enrichMsg && (
         <p
           className={`mt-3 text-sm font-medium ${
-            enrichStatus === "done" ? "text-[#BB63FF]" : "text-red-400"
+            op.enrichStatus === "done" ? "text-[#BB63FF]" : "text-red-400"
           }`}
         >
-          {enrichMessage}
+          {op.enrichMsg}
         </p>
       )}
     </div>
