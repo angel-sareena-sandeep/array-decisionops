@@ -32,8 +32,7 @@ export async function syncWhatsAppImport(args: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = args.supabase as any;
   const { chat_name, file_name, file_sha256, content } = args;
-
-  // Find or create chat
+ // Find or create chat
   const chat_key = chat_name.trim().toLowerCase();
 
   let { data: chatRow } = await db
@@ -43,19 +42,30 @@ export async function syncWhatsAppImport(args: {
     .maybeSingle();
 
   if (!chatRow) {
-    await db.from("chats").insert({ chat_key, chat_name });
-    const { data } = await db
+    const { error: insertError } = await db
+      .from("chats")
+      .insert({ chat_key, chat_name });
+
+    if (insertError) {
+      throw new Error(`DB insert failed for chat "${chat_key}": ${insertError.message}`);
+    }
+
+    const { data, error: selectError } = await db
       .from("chats")
       .select("id")
       .eq("chat_key", chat_key)
       .maybeSingle();
+
+    if (selectError) {
+      throw new Error(`DB select failed for chat "${chat_key}": ${selectError.message}`);
+    }
+
     chatRow = data;
   }
 
   if (!chatRow) {
     throw new Error(`Failed to find or create chat for key "${chat_key}".`);
-  }
-
+  } 
   const chat_id: string = chatRow.id;
 
   // Find or create chat import
